@@ -1,0 +1,9 @@
+node_modules/
+dist/
+workspace/
+.opencode/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store

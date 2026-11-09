@@ -1,0 +1,23 @@
+{
+  "skill_name": "comic",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "重做项目qinglan第N页说明原因：这里 N=3、章节=1。请依据该页现有分镜和审查记录修正这一页，并更新本章导出文件。",
+      "expected_output": "首先通过 pnpm comic budget --json 和 budget -p qinglan --json 读取账本，再通过 status -p qinglan --chapter 1 --json 与 config -p qinglan --project --json 确认项目配置和实际页 ID。以该页现有分镜、当前 final_attempt_id 对应的审查及用户要求写具体 --note，执行单页 redo；成功后 export --chapter 1 --force，再读 status 和 budget，报告修正依据、提交的改动、前后尝试 ID、状态、flagged、账本费用差额及导出路径，不把估算说成实扣、不把提出修正说成效果已验证。用户明确请求且配置具备时允许本次收费操作，不额外强制二次批准；缺密钥、缺页或预算返回3则报告并停止，不编造 review、金额或成果，不加 --ignore-limit，不直接编辑数据库或图片。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "为项目qinglan中新出现的角色生成服装参考图候选，并列出候选ID和路径，先不要锁定。请从已有设定识别对应角色和服装，不要编造ID。",
+      "expected_output": "读取 budget、status 和 config，使用现有 characters / outfits 的真实目标 ID，确认已预处理且画风已由人锁定，再运行 refs gen --kind outfit --target <实际服装ID> --json 和 refs list --status candidate --json。仅列该目标候选 ID、路径、状态及所需人工选择，不自动 lock、不随机选图、不替换已有 locked。目标不明确、未提取、画风未锁定、密钥缺失或预算不足时报告具体前置条件；未经确认不扩大为全书强制预处理，也不手写数据库或镜像设定。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "项目qinglan第1章的001-p03需要重做，但上一次CLI返回退出码3，说预算不足。我没有授权突破预算，请检查当前情况并告诉我怎么继续。",
+      "expected_output": "读取全局及项目过滤的 budget、目标 status 和 config 项目原始 budget，明确 budget -p 的限额与周期仍属工作区策略。依据实际预算拒绝信息报告 scope、已花费、上限、本次预估、重置时间及保留的制作进度；没有对应字段就明确数据缺口，不编造费用或日期。停止收费执行，不添加 --ignore-limit、不提高或清除限额、不删除花费记录、不重复付费重试；说明可等待周期重置或由用户明确调整预算，当前没有重做完成或新生成结果。",
+      "files": []
+    }
+  ]
+}

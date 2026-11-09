@@ -1,0 +1,105 @@
+openai:
+  base_url: https://api.openai.com/v1
+  api_key_env: OPENAI_API_KEY
+
+models:
+  extract: gpt-6.1-sol
+  adapt: gpt-6.1-sol
+  storyboard: gpt-6.1-sol
+  storyboard_review: gpt-6.1-terra
+  rewrite: gpt-6.1-sol
+  review_text: gpt-6.1-terra
+  review_visual: gpt-6.1-terra
+
+pricing:
+  gpt-6.1-sol: { input: 2, output: 10 }
+  gpt-6.1-terra: { input: 1, output: 5 }
+  gpt-image-2.6-sunburst: { text_in: 5, image_in: 8, image_out: 30 }
+  gpt-image-2.6-flare: { text_in: 5, image_in: 8, image_out: 30 }
+
+image:
+  model: gpt-image-2.6-sunburst
+  size: "1024x1536"
+  aspect_ratio: "2:3"
+  quality: high
+  ref_strategy: by_frequency
+  max_refs: 3
+  include_style_ref: true
+  include_location_ref: true
+  concurrency: 2
+  max_refusals: 2
+  timeout_sec: 300
+  retry_backoff_sec: [2, 4, 8, 16, 32]
+
+storyboard:
+  min_panels: 3
+  max_panels: 5
+  max_bubble_chars: 15
+  max_bubbles_per_panel: 2
+  max_chars_per_page: 3
+  max_revisions: 2
+  coverage_min_importance: 2
+  emphasis_min_importance: 3
+  large_panel_sizes: [large, wide]
+  reading_order: ltr
+
+review:
+  enabled: true
+  base_score: 100
+  max_attempts: 3
+  checks: { text: true, identity: true, color: true, content: true, artifacts: true, panel_count: true }
+  min_identity: 0.75
+  min_color: 0.7
+  max_text_errors: 0
+  max_major_issues: 0
+  sfx_patterns: ['^(?:砰|轰|啪|咔|嗖|唰|哗|嘭|铛|咚|嘶|呼|嗡|叮|噗|嘀|吱|咕|哒|嘣|喀)+[！。…～]*$']
+  weights: { text_error: 30, major: 20, minor: 5, identity: 40, color: 20, panel_mismatch: 50 }
+
+refs:
+  candidates: 3
+  sheet_layout: "3x3"
+  style_sample_panels: 4
+  style_sample_text: "师父，弟子来了。"
+
+llm:
+  full_book_max_tokens: 260000
+  chunk_chapters: 20
+  chars_per_token: 2
+  schema_retry: 1
+  timeout_sec: 300
+  retry_backoff_sec: [2, 4, 8, 16, 32]
+
+summary:
+  max_chars: 200
+
+budget:
+  limit_usd: null
+  period: month
+  cycle_start_day: 1
+  timezone: Asia/Shanghai
+  estimates: { image: 0.25, llm: 0.05, full_book: 1.0 }
+
+import:
+  chapter_regex: "^\\s*第[零一二三四五六七八九十百千0-9]+章.*$"
+  strip_patterns: []
+
+export:
+  pdf: true
+  html: true
+  ai_notice_page: true
+  ai_notice_text: "本作品由 AI 生成"
+  font_path: null
+  text: { font_size: 24, margin: 64, line_height: 36 }
+
+web:
+  host: 127.0.0.1
+  port: 4321
+  poll_interval_ms: 2000
+  max_upload_mb: 20
+
+prompts:
+  vars: {}
+  image_sections: [style, page, references, characters, panels, text_rules, corrections]
+
+project:
+  style_desc: "清新国风修仙，干净线稿，明亮通透的赛璐璐上色"

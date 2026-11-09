@@ -1,0 +1,9 @@
+- 每页必须有 {{config.storyboard.min_panels}} 至 {{config.storyboard.max_panels}} 格。
+- 阅读顺序配置为 {{config.storyboard.reading_order}}：ltr 表示从左到右，rtl 表示从右到左；两者都从上到下。页内 panels 数组、对白顺序和构图都须遵守该顺序。
+- 每个气泡不超过 {{config.storyboard.max_bubble_chars}} 个汉字与中文标点，每格最多 {{config.storyboard.max_bubbles_per_panel}} 个气泡。
+- 每页出场角色不超过 {{config.storyboard.max_chars_per_page}} 人，同一角色在多格出现只计一人。
+- importance>={{config.storyboard.emphasis_min_importance}} 的节拍必须用 size={{join config.storyboard.large_panel_sizes " 或 "}} 的大格，或采用符合每页格数配置的整页方案。
+- 所有 importance>={{config.storyboard.coverage_min_importance}} 的节拍都必须在至少一格的 beat_ids 中出现，不得遗漏或引用不存在的节拍。
+- 对白可以删减或拆到相邻格，但不能改变意思；不得为满足格数而编造剧情。
+- layout 按行描述版式，每行写格数及必要的 wide 标记，行之间用 | 分隔。row 从 1 开始，layout、row 和 size 必须描述同一版式。
+- 角色、服装、地点只能引用输入的已知 ID；服装必须属于该角色，不得擅自换装。
