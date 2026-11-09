@@ -69,7 +69,18 @@ storyboard:
 
 **切换只保存配置，不自动生图或收费，也不会把旧页漫裁成四格。** 已完成章节保留自己的分镜格式、选定图片与导出；想按另一格式重新制作旧章，需要明确开启「强制执行」再运行改编或章节制作，这会重新计费，历史参考图和尝试原图仍保留。修改后无 `--force` 的续跑仍跳过已完成结果。
 
-章节稿台支持「逐页查看 / 向下连读」。HTML 条漫阅读页按组号连续排列，手机全宽显示，桌面限制阅读宽度；复制时仍需保留 `export/` 与 `pages/` 的相对位置。PDF 仍按每个四格组一页导出，不拼接成无限长的 PDF 页面。已有自定义覆盖模板需要保留相应格式约束与分支。
+章节稿台支持「逐页查看 / 向下连读」。HTML 条漫阅读页按组号连续排列，手机全宽显示，桌面限制阅读宽度。默认使用 `export/` 内的轻量 JPEG，复制完整 `export/` 即可阅读。PDF 仍按每个四格组一页导出，不拼接成无限长的 PDF 页面。已有自定义覆盖模板需要保留相应格式约束与分支。
+
+### 阅读图片大小
+
+生图画质 `image.quality` 与阅读图片压缩是两件事。生图和审查仍使用原始 PNG；导出在本机生成宽度最多 768 像素、不放大的 JPEG 阅读副本，自动调节压缩质量，默认目标为每张约 200 KiB。Web、HTML 和 PDF 使用阅读副本，「打开原图」仍可查看 PNG。不会因此调用模型或新增费用，也不会覆盖、删除参考图、尝试原图或最终 PNG 副本。
+
+```yaml
+export:
+  reading_image_kb: 200
+```
+
+这个值支持工作区和项目覆盖；设为 `null` 使用原始 PNG 阅读和导出。目标不是严格字节上限，极小值或复杂画面可能超出，JPEG 是有损副本。已有章节执行 `export --chapter 1 --force` 即可生成或更新阅读副本，不需重新生图；重绘后也需更新导出。缓存绑定选定尝试和大小设置，不复用旧图的阅读副本。
 
 ## CLI 流程
 
@@ -217,7 +228,7 @@ pnpm comic export -p demo-book --chapter 1 --force
 | `review.weights` | text_error `30`，major `20`，minor `5`，identity `40`，color `20`，panel_mismatch `50` |
 | `budget` | limit_usd `null`，period `month`，cycle_start_day `1`，timezone `Asia/Shanghai`；estimates.image / llm / full_book 为 `0.25 / 0.05 / 1.0` 美元预估值 |
 | `import` | 普通中文章标题正则，strip_patterns `[]`；Markdown 覆盖示例见上文 |
-| `export` | pdf / html / ai_notice_page `true`，ai_notice_text `本作品由 AI 生成`，font_path `null`；text.font_size / margin / line_height `24 / 64 / 36` |
+| `export` | pdf / html / ai_notice_page `true`，reading_image_kb `200`，ai_notice_text `本作品由 AI 生成`，font_path `null`；text.font_size / margin / line_height `24 / 64 / 36` |
 | `web` | host `127.0.0.1`，port `4321`，poll_interval_ms `2000`，max_upload_mb `20` |
 | `prompts` / `project` | vars `{}`；image_sections `[style, page, references, characters, panels, text_rules, corrections]`；style_desc `清新国风修仙，干净线稿，明亮通透的赛璐璐上色` |
 
@@ -257,10 +268,11 @@ workspace/                         # 或 COMIC_WORKSPACE，全部业务数据不
       attempts/p03-a1.png          # 原始尝试只增不改
       pages/p03.png                # 最终选定副本，可替换
       export/chapter.pdf / index.html
+      export/p03.jpg                # 有损阅读副本，可重新生成
     logs/
 ```
 
-`project.db` 是状态唯一权威，`ledger.db` 是花费账本；JSON 只是供人查看的镜像，手改不会成为模型输入。`attempts/` 和 `refs/` 的图片永不覆盖或删除，最终 `pages/` 副本与导出文件可更新。备份应保留工作区数据库及完整相对目录，不能只保存 JSON 镜像。HTML 引用本地 `../pages/` 图片，复制阅读成果时需同时保留 `export/` 与 `pages/` 的相对位置，不是单文件图像嵌入或云端图床。
+`project.db` 是状态唯一权威，`ledger.db` 是花费账本；JSON 只是供人查看的镜像，手改不会成为模型输入。`attempts/` 和 `refs/` 的图片永不覆盖或删除，最终 `pages/` 副本与导出文件可更新。备份应保留工作区数据库及完整相对目录，不能只保存 JSON 镜像。默认 HTML 引用 `export/` 内的 JPEG，分享时复制完整 `export/`；关闭阅读压缩后 HTML 引用 `../pages/` PNG，需同时保留 `export/` 与 `pages/` 的相对位置。都不是单文件图像嵌入或云端图床。
 
 `import --force` 先归档旧 source，再清空章节、页、改编及预处理 / 分镜审查工作状态；保留历史 attempts、refs、reviews、spend 和原始图片，新原稿必须重新 `prepare`。残留镜像、页副本或导出不能代表新原稿进度；**force 不意味着删除所有历史图片或花费**。
 
@@ -285,12 +297,12 @@ PDF 用 `pdf-lib` 与 `@pdf-lib/fontkit` 嵌入本机字体，中文说明页或
 
 - **真实模型验收仅覆盖一部小说的第 1 章**：35 张最终漫画页通过配置的文字与画面审查，并导出 PDF / HTML。这是特定原稿与验收配置下的结果，不是所有默认模型、服务商、小说或全书的端到端保证。
 - 单章验收仍保留一条分镜重复对白提醒。程序校验、文字审查和画面审查通过，不等于叙事问题全部消失；其他章节及长期年龄 / 服装变化的生成效果尚未实测，需人工复核。
-- 手机条漫尚无真实收费生图验收；不能把上述页漫结果推广为条漫输出质量已验证。
+- 同一原稿的首章还完成了 25 组、100 格手机条漫的真实模型验收；同样不代表其他小说或全书的质量保证。
 - 公开代码不依赖验收小说、锁定参考图、账本或生成物；这些数据不随仓库提供。示例项目和小说文件需自行准备，不能直接切换到某个预置验收项目查看成果。
 - 兼容服务需支持 Chat Completions 的 JSON Schema Structured Outputs、视觉输入，以及图像生成 / 多参考图编辑；图像接口需以 `b64_json` 返回 PNG。仅支持文本聊天或图片 URL 的服务不能完成整条流水线，默认模型与单价也需按账户和服务商实际能力核对。
 - Web 仅面向回环单用户使用，没有云端部署、多用户认证或持久任务队列；不支持同一工作区的多进程并行制作。
 
-已有工程验证记录为 **171 项自动测试通过**，并通过 `lint`、`typecheck`、`build`。本地自动检查：
+已有工程验证记录为 **176 项自动测试通过**，并通过 `lint`、`typecheck`、`build`。本地自动检查：
 
 ```sh
 pnpm lint

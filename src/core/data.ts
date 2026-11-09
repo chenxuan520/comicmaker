@@ -6,7 +6,7 @@ export async function getChapter(ctx: Context, number: number | string): Promise
   const id = chapterId(number);
   const chapter = await ctx.db.get<Chapter>("SELECT * FROM chapters WHERE id = ?", [id]);
   if (!chapter) throw new PreconditionError(`Chapter ${id} not found; import a novel first`);
-  return chapter;
+  return { ...chapter, title: chapter.title.replace(/^#{1,6}\s+/, "") };
 }
 
 export async function getPage(ctx: Context, id: string): Promise<Page> {

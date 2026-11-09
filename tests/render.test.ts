@@ -85,6 +85,7 @@ test("M2 retries a text error with exact corrections, preserves attempts, and sk
 
 test("failed reviews choose the highest score, remain flagged after PDF and HTML export", async (t) => {
   const f = await prepared(t);
+  f.ctx.config.export.reading_image_kb = null;
   f.ctx.config.review.max_attempts = 2;
   let visualCalls = 0;
   f.ai.onStructured = (request) => {

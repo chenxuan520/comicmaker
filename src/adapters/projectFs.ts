@@ -1,6 +1,8 @@
 import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve, win32 } from "node:path";
+import jpeg from "jpeg-js";
+import { PNG } from "pngjs";
 import type { ProjectFs } from "../core/ports.js";
 
 export class LocalProjectFs implements ProjectFs {
@@ -78,6 +80,49 @@ export class LocalProjectFs implements ProjectFs {
       return new Uint8Array(await readFile(filePath));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  }
+
+  async writeReadingCopy(relPath: string, data: Uint8Array, targetKb: number): Promise<Uint8Array> {
+    const original = PNG.sync.read(Buffer.from(data));
+    let width = Math.min(768, original.width);
+    let encoded: Uint8Array;
+    for (;;) {
+      const height = Math.max(1, Math.round(original.height * width / original.width));
+      const image = { width, height, data: Buffer.alloc(width * height * 4) };
+      for (let y = 0; y < height; y++) {
+        const sy = Math.max(0, (y + 0.5) * original.height / height - 0.5);
+        const y0 = Math.floor(sy), y1 = Math.min(y0 + 1, original.height - 1), fy = sy - y0;
+        for (let x = 0; x < width; x++) {
+          const sx = Math.max(0, (x + 0.5) * original.width / width - 0.5);
+          const x0 = Math.floor(sx), x1 = Math.min(x0 + 1, original.width - 1), fx = sx - x0;
+          for (let channel = 0; channel < 4; channel++) {
+            const top = original.data[(y0 * original.width + x0) * 4 + channel] * (1 - fx) + original.data[(y0 * original.width + x1) * 4 + channel] * fx;
+            const bottom = original.data[(y1 * original.width + x0) * 4 + channel] * (1 - fx) + original.data[(y1 * original.width + x1) * 4 + channel] * fx;
+            image.data[(y * width + x) * 4 + channel] = Math.round(top * (1 - fy) + bottom * fy);
+          }
+        }
+      }
+      let quality = 85;
+      encoded = jpeg.encode(image, quality).data;
+      while (encoded.length > targetKb * 1024 && quality > 25) {
+        quality -= 10;
+        encoded = jpeg.encode(image, quality).data;
+      }
+      if (encoded.length <= targetKb * 1024 || width === 1) break;
+      width = Math.max(1, Math.floor(width * Math.sqrt(targetKb * 1024 / encoded.length) * 0.95));
+    }
+    const bytes = new Uint8Array(encoded);
+    await this.writeBytes(relPath, bytes);
+    return bytes;
+  }
+
+  async exists(relPath: string): Promise<boolean> {
+    const filePath = await this.resolvePath(relPath);
+    try { return (await lstat(filePath)).isFile(); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
       throw error;
     }
   }

@@ -3,7 +3,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { getChapter, requireStoryboardReady } from "../data.js";
 import { PreconditionError } from "../errors.js";
 import { pngSize } from "../image.js";
-import { pageFile, STRIP_LAYOUT, type Context, type Page, type PageStoryboard } from "../types.js";
+import { pageFile, readingFile, STRIP_LAYOUT, type Context, type Page, type PageStoryboard, type ReadingImages } from "../types.js";
 
 function htmlEscape(text: string): string {
   return text.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
@@ -30,7 +30,21 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
   const base = `chapters/${chapter.id}/export`;
   const flagged = rows.filter((page) => page.status === "flagged").map((page) => page.id);
   const paths = { pdf: ctx.config.export.pdf ? `${base}/chapter.pdf` : null, html: ctx.config.export.html ? `${base}/index.html` : null };
-  if (!options.force && chapter.status === "exported" && (!paths.pdf || await ctx.fs.readBytes(paths.pdf)) && (!paths.html || await ctx.fs.readText(paths.html))) return { chapter: chapter.id, ...paths, flagged, skipped: true };
+  const targetKb = ctx.config.export.reading_image_kb;
+  const readingKey = `export.reading.${chapter.id}`;
+  const marker = await ctx.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", [readingKey]);
+  const previous = marker ? JSON.parse(marker.value) as ReadingImages : undefined;
+  const copies = new Map<string, Uint8Array>();
+  if (targetKb !== null && previous?.target_kb === targetKb) {
+    for (const row of rows) {
+      if (row.final_attempt_id && previous.attempts[row.id] === row.final_attempt_id) {
+        const bytes = await ctx.fs.readBytes(`${base}/${readingFile(row.page_no)}`);
+        if (bytes) copies.set(row.id, bytes);
+      }
+    }
+  }
+  const readingReady = targetKb === null ? !previous || previous.target_kb === null : previous?.target_kb === targetKb && copies.size === rows.filter((row) => row.final_attempt_id).length;
+  if (!options.force && readingReady && chapter.status === "exported" && (!paths.pdf || await ctx.fs.readBytes(paths.pdf)) && (!paths.html || await ctx.fs.readText(paths.html))) return { chapter: chapter.id, ...paths, flagged, skipped: true };
   const isStrip = rows.every((row) => (JSON.parse(row.storyboard) as PageStoryboard).layout === STRIP_LAYOUT);
   const dimensions = ctx.config.image.size.split("x").map(Number);
   const fallbackSize = { width: dimensions[0], height: dimensions[1] };
@@ -56,17 +70,26 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
     }
   };
   const htmlPages: string[] = [];
+  const reading: ReadingImages = { target_kb: targetKb, attempts: {} };
   for (const row of rows) {
     if (row.final_attempt_id) {
       const path = `chapters/${chapter.id}/pages/${pageFile(row.page_no)}`;
       const data = await ctx.fs.readBytes(path);
       if (!data) throw new PreconditionError(`Final page copy is missing: ${path}`);
       const size = pngSize(data);
+      const readingData = targetKb === null ? data : copies.get(row.id) ?? await ctx.fs.writeReadingCopy(`${base}/${readingFile(row.page_no)}`, data, targetKb);
+      if (targetKb !== null) reading.attempts[row.id] = row.final_attempt_id;
+      if (targetKb !== null) reading.attempts[row.id] = row.final_attempt_id;
       if (pdf) {
-        const image = await pdf.embedPng(data);
+        const image = targetKb === null ? await pdf.embedPng(data) : await pdf.embedJpg(readingData);
         pdf.addPage([size.width, size.height]).drawImage(image, { x: 0, y: 0, width: size.width, height: size.height });
       }
-      htmlPages.push(`<figure><img src="../pages/${pageFile(row.page_no)}" width="${size.width}" height="${size.height}" loading="lazy" alt="${htmlEscape(chapter.title)} ${row.page_no}"><figcaption>${row.page_no}${row.status === "flagged" ? " · flagged" : ""}</figcaption></figure>`);
+      const imageSource = targetKb === null ? `../pages/${pageFile(row.page_no)}` : readingFile(row.page_no);
+      if (isStrip) {
+        htmlPages.push(`<img src="${imageSource}" width="${size.width}" height="${size.height}" loading="lazy" alt="${htmlEscape(chapter.title)} ${row.page_no}${row.status === "flagged" ? "，待复核" : ""}">`);
+      } else {
+        htmlPages.push(`<figure><img src="${imageSource}" width="${size.width}" height="${size.height}" loading="lazy" alt="${htmlEscape(chapter.title)} ${row.page_no}"><figcaption>${row.page_no}${row.status === "flagged" ? " · flagged" : ""}</figcaption></figure>`);
+      }
     } else {
       const storyboard = JSON.parse(row.storyboard) as PageStoryboard;
       const text = storyboard.panels.flatMap((panel) => panel.dialogue.map((dialogue) => dialogue.text)).join("\n");
@@ -83,7 +106,10 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${htmlEscape(ctx.project.title)} · ${htmlEscape(chapter.title)}</title>
 <style>body{margin:0;background:#eeeae2;color:#242b2a;font-family:system-ui,sans-serif}header,main{max-width:${fallbackSize.width}px;margin:auto}header{padding:24px;box-sizing:border-box}h1{font-size:24px}figure{margin:0 0 24px}img{display:block;width:100%;height:auto;background:white}figcaption{text-align:center;padding:12px;font-size:12px}.text-page{box-sizing:border-box;min-height:70vh;background:white;padding:8%;margin-bottom:24px;line-height:2}.notice{display:grid;place-content:center;text-align:center}${isStrip ? ".strip{background:white}.strip header,.strip main{max-width:720px}.strip figure{margin:0}.strip figcaption{padding:8px 12px;text-align:right;color:#59665e}.strip .text-page{margin-bottom:0}" : ""}</style></head>
 <body${isStrip ? ' class="strip" data-format="strip"' : ""}><header><h1>${htmlEscape(ctx.project.title)}</h1><p>${htmlEscape(chapter.title)}</p>${isStrip ? "<p>手机条漫 · 单列四格 · 向下滑动阅读</p>" : ""}</header><main>${htmlPages.join("\n")}</main></body></html>\n`);
-  await ctx.db.run("UPDATE chapters SET status = 'exported' WHERE id = ?", [chapter.id]);
+  await ctx.db.transaction([
+    { sql: "UPDATE chapters SET status = 'exported' WHERE id = ?", params: [chapter.id] },
+    { sql: "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params: [readingKey, JSON.stringify(reading)] },
+  ]);
   ctx.log("info", `Exported chapter ${chapter.id}`, { ...paths, flagged });
   return { chapter: chapter.id, ...paths, flagged, skipped: false };
 }

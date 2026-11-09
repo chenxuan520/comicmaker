@@ -95,7 +95,7 @@ test("novel import splits chapters, supports configured Markdown headings and ar
       assert.equal(decodeNovel(new Uint8Array([0xc4, 0xe3, 0xba, 0xc3])).text, "你好");
       const text = `${novel}\n\n第二章 归来\n\n林青下山。`;
       assert.equal(splitNovel(text, handle.ctx.config.import, "book").length, 2);
-      assert.equal(splitNovel("### 第1章 山峰\n\n正文。", { chapter_regex: "^\\s*(?:#{1,6}\\s*)?第[0-9]+章.*$", strip_patterns: [] }, "book")[0].title, "### 第1章 山峰");
+      assert.equal(splitNovel("### 第1章 山峰\n\n正文。", { chapter_regex: "^\\s*(?:#{1,6}\\s*)?第[0-9]+章.*$", strip_patterns: [] }, "book")[0].title, "第1章 山峰");
       const result = await importNovel(handle.ctx, new TextEncoder().encode(text));
       assert.equal(result.chapters, 2);
       await assert.rejects(importNovel(handle.ctx, new TextEncoder().encode(text)));

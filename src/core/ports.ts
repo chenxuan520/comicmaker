@@ -12,7 +12,9 @@ export interface Db {
 export interface BlobStore {
   writeImage(relPath: string, data: Uint8Array): Promise<{ sha256: string }>;
   replaceCopy(relPath: string, data: Uint8Array): Promise<void>;
+  writeReadingCopy(relPath: string, data: Uint8Array, targetKb: number): Promise<Uint8Array>;
   readBytes(relPath: string): Promise<Uint8Array | null>;
+  exists(relPath: string): Promise<boolean>;
   writeJson(relPath: string, value: unknown): Promise<void>;
   readText(relPath: string): Promise<string | null>;
   writeText(relPath: string, text: string): Promise<void>;

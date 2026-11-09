@@ -14,6 +14,9 @@ dependencies:
   handlebars:
     specifier: ^4.7.8
     version: 4.7.10
+  jpeg-js:
+    specifier: ^0.4.4
+    version: 0.4.4
   lucide-react:
     specifier: ^0.468.0
     version: 0.468.0(react@19.3.1)
@@ -23,6 +26,9 @@ dependencies:
   pdf-lib:
     specifier: ^1.17.1
     version: 1.17.1
+  pngjs:
+    specifier: ^7.0.0
+    version: 7.0.0
   react:
     specifier: ^19.0.0
     version: 19.3.1
@@ -43,6 +49,9 @@ devDependencies:
   '@types/node':
     specifier: ^22.0.0
     version: 22.20.5
+  '@types/pngjs':
+    specifier: ^6.0.5
+    version: 6.0.5
   '@types/react':
     specifier: ^19.0.0
     version: 19.3.0
@@ -1007,6 +1016,12 @@ packages:
       undici-types: 6.21.0
     dev: true
 
+  /@types/pngjs@6.0.5:
+    resolution: {integrity: sha512-0k5eKfrA83JOZPppLtS2C7OUtyNAl2wKNxfyYl9Q5g9lPkgBl/9hNyAu6HuEH2J4XmIv2znEpkDd0SaZVxW6iQ==}
+    dependencies:
+      '@types/node': 22.20.5
+    dev: true
+
   /@types/react-dom@19.3.0(@types/react@19.3.0):
     resolution: {integrity: sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q==}
     peerDependencies:
@@ -1200,6 +1215,10 @@ packages:
       uglify-js: 3.19.3
     dev: false
 
+  /jpeg-js@0.4.4:
+    resolution: {integrity: sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg==}
+    dev: false
+
   /js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
     dev: true
@@ -1297,6 +1316,11 @@ packages:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
     engines: {node: '>=12'}
     dev: true
+
+  /pngjs@7.0.0:
+    resolution: {integrity: sha512-LKWqWJRhstyYo9pGvgor/ivk2w94eSjE3RGVuzLGlr3NmD8bf7RcYGze1mNdEHRP6TRP6rMuDHk5t44hnTRyow==}
+    engines: {node: '>=14.19.0'}
+    dev: false
 
   /postcss@8.5.32:
     resolution: {integrity: sha512-LJlKCCAUFKOuZxipUdYw1NzIITEsPcgyOG9LkvRJvuKj/bRzbuRY0ARXvL0pWGpsZvn8jku+LMep2eU0seHp8g==}

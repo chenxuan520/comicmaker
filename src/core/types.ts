@@ -7,6 +7,8 @@ export type { Config, Character, Outfit, Location, PageStoryboard };
 
 export const STRIP_LAYOUT = "strip-4";
 
+export interface ReadingImages { target_kb: number | null; attempts: Record<string, string> }
+
 export interface Context {
   project: { id: string; title: string; style_desc: string };
   config: Config;
@@ -76,6 +78,10 @@ export function chapterId(value: number | string): string {
 
 export function pageFile(pageNo: number): string {
   return `p${String(pageNo).padStart(2, "0")}.png`;
+}
+
+export function readingFile(pageNo: number): string {
+  return `p${String(pageNo).padStart(2, "0")}.jpg`;
 }
 
 export function paragraphs(text: string): string[] {

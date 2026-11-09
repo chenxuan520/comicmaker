@@ -56,7 +56,7 @@ async function body(request: IncomingMessage, limit: number): Promise<Uint8Array
   return result;
 }
 
-const contentTypes: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".png": "image/png", ".svg": "image/svg+xml", ".pdf": "application/pdf", ".ico": "image/x-icon", ".woff2": "font/woff2" };
+const contentTypes: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".pdf": "application/pdf", ".ico": "image/x-icon", ".woff2": "font/woff2" };
 
 export async function startServer(workspace: WorkspaceRuntime, options: { host: string; port: number }) {
   if (!["127.0.0.1", "localhost", "::1"].includes(options.host)) throw new PreconditionError("Web studio only supports loopback hosts");
@@ -189,7 +189,7 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
           if (parts.length === 3 && request.method === "GET") {
             const status = await getStatus(handle.ctx);
             const fileUrl = (path: string) => `/api/projects/${encodeURIComponent(id)}/files/${path.split("/").map(encodeURIComponent).join("/")}`;
-            replyJson(200, { ...status, pages: status.pages.map((page) => ({ ...page, image_url: page.image_path ? `${fileUrl(page.image_path)}?attempt=${page.final_attempt_id}` : null })), refs: status.refs.map((ref) => ({ ...ref, image_url: fileUrl(ref.path!) })) }); return;
+            replyJson(200, { ...status, pages: status.pages.map((page) => ({ ...page, image_url: page.image_path ? `${fileUrl(page.reading_image_path ?? page.image_path)}?attempt=${page.final_attempt_id}${page.reading_image_path ? `&kb=${handle.ctx.config.export.reading_image_kb}` : ""}` : null, original_image_url: page.image_path ? `${fileUrl(page.image_path)}?attempt=${page.final_attempt_id}` : null })), refs: status.refs.map((ref) => ({ ...ref, image_url: fileUrl(ref.path!) })) }); return;
           }
           if (parts[3] === "import" && request.method === "POST") {
             replyJson(200, await importNovel(handle.ctx, await body(request, limit), { force: url.searchParams.get("force") === "true" })); return;
@@ -206,7 +206,7 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
           }
           if (parts[3] === "files" && request.method === "GET") {
             const path = parts.slice(4).join("/");
-            if (!/^(?:refs\/.+\.png|chapters\/\d+\/(?:pages|attempts)\/.+\.png|chapters\/\d+\/export\/(?:index\.html|chapter\.pdf))$/.test(path)) throw new PreconditionError("This project file is not public");
+            if (!/^(?:refs\/.+\.png|chapters\/\d+\/(?:pages|attempts)\/.+\.png|chapters\/\d+\/export\/(?:index\.html|chapter\.pdf|p\d+\.jpg))$/.test(path)) throw new PreconditionError("This project file is not public");
             const bytes = await handle.ctx.fs.readBytes(path);
             if (!bytes) { replyJson(404, { error: { message: "File not found", code: 1 } }); return; }
             response.writeHead(200, { "Content-Type": contentTypes[extname(path)] ?? "application/octet-stream", "Cache-Control": path.includes("/pages/") || path.includes("/export/") ? "no-store" : "private, max-age=31536000, immutable" });

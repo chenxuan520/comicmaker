@@ -393,6 +393,7 @@ export const configSchema = z
       .object({
         pdf: z.boolean(),
         html: z.boolean(),
+        reading_image_kb: positiveInteger.nullable().default(200),
         ai_notice_page: z.boolean(),
         ai_notice_text: z.string(),
         font_path: z.string().nullable(),

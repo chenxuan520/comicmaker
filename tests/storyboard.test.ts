@@ -90,8 +90,9 @@ async function harness(t: TestContext, responses: unknown[] = [], bible = makeBi
   const jsonWrites: string[] = [];
   const unused = async (): Promise<never> => { throw new Error("Unexpected image/file operation"); };
   const fs: ProjectFs = {
-    writeImage: unused, replaceCopy: unused, writeText: unused, writeBytes: unused, writeNovel: unused,
+    writeImage: unused, replaceCopy: unused, writeReadingCopy: unused, writeText: unused, writeBytes: unused, writeNovel: unused,
     readText: async () => null,
+    exists: unused,
     readBytes: async (path) => bytes.get(path) ?? null,
     writeJson: async (path, value) => { json.set(path, structuredClone(value)); jsonWrites.push(path); },
   };

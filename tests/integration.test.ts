@@ -67,7 +67,7 @@ async function localFixture(t: TestContext, provider?: AiProvider) {
     { openai: { base_url: `${mock.url}/v1`, api_key_env: "OPENAI_API_KEY" } },
     { refs: { candidates: 1 }, budget: { limit_usd: 10, period: "none" },
       image: { timeout_sec: 5, retry_backoff_sec: [] }, llm: { timeout_sec: 5, retry_backoff_sec: [] },
-      export: { pdf, font_path: pdf ? fontPath : null } },
+      export: { pdf, font_path: pdf ? fontPath : null, reading_image_kb: null } },
   )));
   await writeFile(join(f.root, ".env"), "OPENAI_API_KEY=test-key\n");
   return { ...f, mock, pdf, cleanup };

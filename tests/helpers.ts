@@ -8,7 +8,7 @@ import type { AiProvider, ImageRequest, StructuredRequest } from "../src/core/po
 import type { Extraction, Adaptation, PageStoryboard, VisualReview } from "../schemas/index.js";
 
 export const repository = fileURLToPath(new URL("../", import.meta.url));
-export const png = decodeBase64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG1cAAAAASUVORK5CYII=");
+export const png = decodeBase64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4AWP4DwQACfsD/c8LaHIAAAAASUVORK5CYII=");
 export const novel = "第一章 青岚峰\n\n林青推开柴门，看见师父站在崖边。\n\n师父说：你来了。\n\n林青答：弟子来了。";
 export const extraction: Extraction = {
   characters: [{

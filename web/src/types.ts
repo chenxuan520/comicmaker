@@ -65,6 +65,7 @@ export interface ComicPage {
   status: string;
   final_attempt_id: string | null;
   image_url: string | null;
+  original_image_url: string | null;
   storyboard: unknown;
   reviews?: ReviewRecord[];
 }

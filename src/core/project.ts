@@ -32,7 +32,7 @@ export function splitNovel(text: string, config: Config["import"], fallbackTitle
   for (const line of cleaned.split("\n")) {
     if (chapterPattern.test(line)) {
       if (title !== null) result.push({ idx: result.length + 1, title, text: lines.join("\n").trim() });
-      title = line.trim();
+      title = line.trim().replace(/^#{1,6}\s+/, "");
       lines = [];
     } else {
       lines.push(line);
