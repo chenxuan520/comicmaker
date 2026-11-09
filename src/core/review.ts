@@ -43,8 +43,9 @@ export function compareText(page: PageStoryboard, recognized: TextReview, sfxPat
 export function evaluateReview(page: PageStoryboard, textErrors: TextError[], visual: VisualReview, config: Context["config"]["review"]) {
   const expected = page.panels.flatMap((panel, index) => panel.characters.map((character) => ({ panel: index + 1, id: character.id })));
   const matches = expected.map((character) => visual.characters.find((item) => item.panel === character.panel && item.char_id === character.id));
-  const identity = config.checks.identity ? Math.min(1, ...matches.map((match) => match?.identity_match ?? 0), ...visual.characters.map((character) => character.identity_match)) : 1;
-  const color = config.checks.color ? Math.min(1, ...matches.map((match) => match?.color_match ?? 0), ...visual.characters.map((character) => character.color_match)) : 1;
+  const matched = config.missing_character === "ignore" ? matches.filter((match): match is NonNullable<typeof match> => match !== undefined) : matches;
+  const identity = config.checks.identity ? Math.min(1, ...matched.map((match) => match?.identity_match ?? 0), ...visual.characters.map((character) => character.identity_match)) : 1;
+  const color = config.checks.color ? Math.min(1, ...matched.map((match) => match?.color_match ?? 0), ...visual.characters.map((character) => character.color_match)) : 1;
   const issues = [...(config.checks.content ? visual.content : []), ...(config.checks.artifacts ? visual.artifacts : [])];
   const major = issues.filter((item) => item.severity === "major").length;
   const minor = issues.filter((item) => item.severity === "minor").length;

@@ -334,6 +334,7 @@ export const configSchema = z
           .passthrough(),
         min_identity: z.number().min(0).max(1),
         min_color: z.number().min(0).max(1),
+        missing_character: z.enum(["fail", "ignore"]).default("fail"),
         max_text_errors: nonnegativeInteger,
         max_major_issues: nonnegativeInteger,
         sfx_patterns: z.array(z.string()),

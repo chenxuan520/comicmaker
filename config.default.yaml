@@ -51,6 +51,7 @@ review:
   checks: { text: true, identity: true, color: true, content: true, artifacts: true, panel_count: true }
   min_identity: 0.75
   min_color: 0.7
+  missing_character: fail
   max_text_errors: 0
   max_major_issues: 0
   sfx_patterns: ['^(?:砰|轰|啪|咔|嗖|唰|哗|嘭|铛|咚|嘶|呼|嗡|叮|噗|嘀|吱|咕|哒|嘣|喀)+[！。…～]*$']

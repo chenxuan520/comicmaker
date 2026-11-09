@@ -224,7 +224,7 @@ pnpm comic export -p demo-book --chapter 1 --force
 | `llm` / `summary` | full_book_max_tokens `260000`，chunk_chapters `20`，chars_per_token `2`，schema_retry `1`；summary.max_chars `200` |
 | `refs` | candidates `3`，sheet_layout `3x3`，style_sample_panels `4`，style_sample_text `师父，弟子来了。` |
 | `storyboard` | format `page`，min_panels / max_panels `3 / 5`，max_bubble_chars `15`，max_bubbles_per_panel `2`，max_chars_per_page `3`，max_revisions `2`，reading_order `ltr`；coverage_min_importance `2`，emphasis_min_importance `3`，large_panel_sizes `[large, wide]` |
-| `review` | enabled `true`，base_score `100`，max_attempts `3`，checks 全开，min_identity `0.75`，min_color `0.7`，max_text_errors / max_major_issues `0 / 0`；sfx_patterns 见默认文件 |
+| `review` | enabled `true`，base_score `100`，max_attempts `3`，checks 全开，min_identity `0.75`，min_color `0.7`，max_text_errors / max_major_issues `0 / 0`，missing_character `fail`；sfx_patterns 见默认文件 |
 | `review.weights` | text_error `30`，major `20`，minor `5`，identity `40`，color `20`，panel_mismatch `50` |
 | `budget` | limit_usd `null`，period `month`，cycle_start_day `1`，timezone `Asia/Shanghai`；estimates.image / llm / full_book 为 `0.25 / 0.05 / 1.0` 美元预估值 |
 | `import` | 普通中文章标题正则，strip_patterns `[]`；Markdown 覆盖示例见上文 |
@@ -232,7 +232,10 @@ pnpm comic export -p demo-book --chapter 1 --force
 | `web` | host `127.0.0.1`，port `4321`，poll_interval_ms `2000`，max_upload_mb `20` |
 | `prompts` / `project` | vars `{}`；image_sections `[style, page, references, characters, panels, text_rules, corrections]`；style_desc `清新国风修仙，干净线稿，明亮通透的赛璐璐上色` |
 
-默认模型名与 `pricing` 只是仓库配置快照。先确认服务商与账户实际支持的模型、上下文、图像尺寸和参考图编辑能力，再在覆盖层调整 `models`、`image.model` 与 `pricing`。单价单位为美元 / 百万 token，不随服务商自动更新；换服务商或计费档位时须自行核对，缺单价不代表免费。
+视觉审查未返回分镜中的某个角色时，默认按 0 分判失败并触发重抽；远景或背身角色较多时可设 `review.missing_character: ignore` 忽略未返回项，只对模型实际返回的角色打分，减少无谓重抽。
+
+默认模型名与 `pricing` 只是仓库配置快照。
+先确认服务商与账户实际支持的模型、上下文、图像尺寸和参考图编辑能力，再在覆盖层调整 `models`、`image.model` 与 `pricing`。单价单位为美元 / 百万 token，不随服务商自动更新；换服务商或计费档位时须自行核对，缺单价不代表免费。
 
 颜色字段未知时保留 `null`，已知时用中文颜色词加 hex，如 `墨黑 #1A1A1A`，不补写原文未给出的颜色；模板省略空字段。摘要 Structured Outputs 使用对象根 `{"chapters":[{"chapter":1,"summary":"…"}]}`，不是裸数组。
 
