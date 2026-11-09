@@ -1,6 +1,6 @@
 # 页间 · comicmaker
 
-**页间（comicmaker）**是本地小说转彩色页漫工作室：一本小说一个项目，提取设定、人工锁定参考图，再逐章改编、分镜、生图、审查与重抽，导出 PDF 和本地 HTML 阅读页。默认整页生成，中文对白直接画进图里，不做程序叠字。
+**页间（comicmaker）**是本地小说转彩色漫画工作室，支持页漫与手机条漫：一本小说一个项目，提取设定、人工锁定参考图，再逐章改编、分镜、生图、审查与重抽，导出 PDF 和本地 HTML 阅读页。默认页漫模式，一张图生成一页或一个四格组，中文对白直接画进图里，不做程序叠字。
 
 提供 CLI 和本地 Web UI；不做云端部署、图床、多用户或多个项目同时制作。本地指存储与编排在本机，模型调用仍会把相关原文、提示词和参考图发送给配置的服务商。
 
@@ -50,6 +50,26 @@ OPENAI_API_KEY=your-provider-api-key
 | 预算 / 任务 | 查看账本分类、任务进度与日志、取消当前任务 |
 
 只监听回环地址。一个 Web 服务在整个工作区同时只运行一个任务，运行中提交新任务会被拒绝，不是按项目分别并行；取消保留已完成进度，已发出的模型请求仍可能计费。CLI 不支持多进程或多个项目同时制作，也不要与 Web 生成任务混跑；`image.concurrency` 只控制同一章内的页并发。
+
+## 页漫与手机条漫
+
+在「章节稿台」选择 **页漫 / 手机条漫**，保存为当前作品的配置覆盖；也可在工作区或项目 YAML 中设置：
+
+```yaml
+storyboard:
+  format: strip
+```
+
+| 格式 | 分镜与阅读方式 |
+| --- | --- |
+| `page`（默认） | 常规页漫，按 `min_panels` / `max_panels` 安排格数与版式 |
+| `strip` | 每组固定四个全宽横向画格，单列四行，自上而下连续阅读；不使用页漫格数上下限 |
+
+条漫仍复用原有改编、生图、文字与画面审查、预算和重抽流程，不是另一条生成流水线。输出尺寸、模型、参考图和画质继续使用现有配置，不自动换模型或增加图像尺寸。分镜的 `layout: strip-4` 保存实际格式；条漫版式错误会被列入分镜修订或画面审查。
+
+**切换只保存配置，不自动生图或收费，也不会把旧页漫裁成四格。** 已完成章节保留自己的分镜格式、选定图片与导出；想按另一格式重新制作旧章，需要明确开启「强制执行」再运行改编或章节制作，这会重新计费，历史参考图和尝试原图仍保留。修改后无 `--force` 的续跑仍跳过已完成结果。
+
+章节稿台支持「逐页查看 / 向下连读」。HTML 条漫阅读页按组号连续排列，手机全宽显示，桌面限制阅读宽度；复制时仍需保留 `export/` 与 `pages/` 的相对位置。PDF 仍按每个四格组一页导出，不拼接成无限长的 PDF 页面。已有自定义覆盖模板需要保留相应格式约束与分支。
 
 ## CLI 流程
 
@@ -192,7 +212,7 @@ pnpm comic export -p demo-book --chapter 1 --force
 | `image` / `llm` 网络 | timeout_sec 均 `300`，retry_backoff_sec 均 `[2, 4, 8, 16, 32]` |
 | `llm` / `summary` | full_book_max_tokens `260000`，chunk_chapters `20`，chars_per_token `2`，schema_retry `1`；summary.max_chars `200` |
 | `refs` | candidates `3`，sheet_layout `3x3`，style_sample_panels `4`，style_sample_text `师父，弟子来了。` |
-| `storyboard` | min_panels / max_panels `3 / 5`，max_bubble_chars `15`，max_bubbles_per_panel `2`，max_chars_per_page `3`，max_revisions `2`，reading_order `ltr`；coverage_min_importance `2`，emphasis_min_importance `3`，large_panel_sizes `[large, wide]` |
+| `storyboard` | format `page`，min_panels / max_panels `3 / 5`，max_bubble_chars `15`，max_bubbles_per_panel `2`，max_chars_per_page `3`，max_revisions `2`，reading_order `ltr`；coverage_min_importance `2`，emphasis_min_importance `3`，large_panel_sizes `[large, wide]` |
 | `review` | enabled `true`，base_score `100`，max_attempts `3`，checks 全开，min_identity `0.75`，min_color `0.7`，max_text_errors / max_major_issues `0 / 0`；sfx_patterns 见默认文件 |
 | `review.weights` | text_error `30`，major `20`，minor `5`，identity `40`，color `20`，panel_mismatch `50` |
 | `budget` | limit_usd `null`，period `month`，cycle_start_day `1`，timezone `Asia/Shanghai`；estimates.image / llm / full_book 为 `0.25 / 0.05 / 1.0` 美元预估值 |
@@ -265,11 +285,12 @@ PDF 用 `pdf-lib` 与 `@pdf-lib/fontkit` 嵌入本机字体，中文说明页或
 
 - **真实模型验收仅覆盖一部小说的第 1 章**：35 张最终漫画页通过配置的文字与画面审查，并导出 PDF / HTML。这是特定原稿与验收配置下的结果，不是所有默认模型、服务商、小说或全书的端到端保证。
 - 单章验收仍保留一条分镜重复对白提醒。程序校验、文字审查和画面审查通过，不等于叙事问题全部消失；其他章节及长期年龄 / 服装变化的生成效果尚未实测，需人工复核。
+- 手机条漫尚无真实收费生图验收；不能把上述页漫结果推广为条漫输出质量已验证。
 - 公开代码不依赖验收小说、锁定参考图、账本或生成物；这些数据不随仓库提供。示例项目和小说文件需自行准备，不能直接切换到某个预置验收项目查看成果。
 - 兼容服务需支持 Chat Completions 的 JSON Schema Structured Outputs、视觉输入，以及图像生成 / 多参考图编辑；图像接口需以 `b64_json` 返回 PNG。仅支持文本聊天或图片 URL 的服务不能完成整条流水线，默认模型与单价也需按账户和服务商实际能力核对。
 - Web 仅面向回环单用户使用，没有云端部署、多用户认证或持久任务队列；不支持同一工作区的多进程并行制作。
 
-已有工程验证记录为 **166 项自动测试通过**，并通过 `lint`、`typecheck`、`build`。本地自动检查：
+已有工程验证记录为 **171 项自动测试通过**，并通过 `lint`、`typecheck`、`build`。本地自动检查：
 
 ```sh
 pnpm lint

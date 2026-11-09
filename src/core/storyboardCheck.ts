@@ -1,5 +1,5 @@
 import type { Config, PageStoryboard, Scene, StoryboardIssue } from "../../schemas/index.js";
-import type { Bible, Ref } from "./types.js";
+import { STRIP_LAYOUT, type Bible, type Ref } from "./types.js";
 
 export function countChineseCharacters(text: string): number {
   return text.match(/[\p{Script=Han}\u3001-\u3003\u3008-\u3011\u3014-\u301b\uff01\uff08\uff09\uff0c\uff0e\uff1a\uff1b\uff1f\uff3b\uff3d\uff5b\uff5d\uff61-\uff65\u2014\u2018\u2019\u201c\u201d\u2026\u00b7]/gu)?.length ?? 0;
@@ -51,9 +51,14 @@ export function validateStoryboard(pages: PageStoryboard[], scenes: Scene[], bib
     const panelIds = new Set<string>();
     const pageCharacters = new Set<string>();
     const anchor = page.panels[0]?.id ?? "p1";
-    if (page.panels.length < rules.min_panels || page.panels.length > rules.max_panels) {
+    if (rules.format === "strip") {
+      if (page.layout !== STRIP_LAYOUT || page.panels.length !== 4 || page.panels.some((panel, index) => panel.row !== index + 1 || panel.size !== "wide")) {
+        add(page.page_no, anchor, "pacing", "Vertical strip must have four full-width panels in one column", `Use layout=${STRIP_LAYOUT}, exactly four panels with size=wide, and rows 1, 2, 3, 4 in top-to-bottom order`);
+      }
+    } else if (page.panels.length < rules.min_panels || page.panels.length > rules.max_panels) {
       add(page.page_no, anchor, "pacing", `Page has ${page.panels.length} panels; allowed range is ${rules.min_panels}-${rules.max_panels}`, "Adjust the panel count to the configured range");
     }
+    if (rules.format === "page" && page.layout === STRIP_LAYOUT) add(page.page_no, anchor, "pacing", "Paged format cannot use the vertical strip layout", "Use a paged row layout rather than strip-4, or select storyboard.format=strip");
     for (const panel of page.panels) {
       if (panelIds.has(panel.id)) add(page.page_no, panel.id, "pacing", `Duplicate panel ID ${panel.id}`, "Use unique panel IDs within this page");
       panelIds.add(panel.id);

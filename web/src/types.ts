@@ -1,5 +1,6 @@
 export type View = 'studio' | 'projects' | 'refs' | 'chapters' | 'budget' | 'config' | 'prompts';
 export type RefKind = 'style' | 'outfit' | 'location';
+export type ComicFormat = 'page' | 'strip';
 
 export interface ApiProblem {
   message: string;
@@ -60,6 +61,7 @@ export interface ComicPage {
   id: string;
   chapter_id: string;
   page_no: number;
+  format: ComicFormat;
   status: string;
   final_attempt_id: string | null;
   image_url: string | null;
@@ -85,6 +87,7 @@ export interface Entity {
 
 export interface ProjectDetail {
   project: { id: string; title: string; style_desc: string };
+  comic_format: ComicFormat;
   chapters: Chapter[];
   pages: ComicPage[];
   refs: Reference[];

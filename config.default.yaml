@@ -32,6 +32,7 @@ image:
   retry_backoff_sec: [2, 4, 8, 16, 32]
 
 storyboard:
+  format: page
   min_panels: 3
   max_panels: 5
   max_bubble_chars: 15

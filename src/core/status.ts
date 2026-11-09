@@ -1,5 +1,5 @@
 import { getBible } from "./data.js";
-import { chapterId, type Chapter, type Context, type Page, type Ref } from "./types.js";
+import { chapterId, STRIP_LAYOUT, type Chapter, type Context, type Page, type Ref } from "./types.js";
 
 export async function getStatus(ctx: Context, chapterNumber?: number | string) {
   const filter = chapterNumber === undefined ? "" : "WHERE c.id = ?";
@@ -18,11 +18,12 @@ export async function getStatus(ctx: Context, chapterNumber?: number | string) {
   }
   const pages = rows.map((page) => ({
     ...page, storyboard: JSON.parse(page.storyboard),
+    format: JSON.parse(page.storyboard).layout === STRIP_LAYOUT ? "strip" as const : "page" as const,
     image_path: page.final_attempt_id ? `chapters/${page.chapter_id}/pages/p${String(page.page_no).padStart(2, "0")}.png` : null,
     reviews: byPage.get(page.id) ?? [],
   }));
   const refs = await ctx.db.all<Ref>("SELECT * FROM refs WHERE path IS NOT NULL ORDER BY kind, target_id, id");
   const reviewMeta = await ctx.db.all<{ key: string; value: string }>("SELECT * FROM meta WHERE key LIKE 'storyboard.review.%'");
   const warnings = reviewMeta.filter((row) => { const value = JSON.parse(row.value); return value.completed && !value.passed; }).map((row) => `Storyboard review warning for chapter ${row.key.split(".").at(-1)}`);
-  return { project: ctx.project, chapters, pages, refs, ...await getBible(ctx), warnings, flagged: pages.filter((page) => page.status === "flagged").map((page) => page.id), export_options: { pdf: ctx.config.export.pdf, html: ctx.config.export.html } };
+  return { project: ctx.project, comic_format: ctx.config.storyboard.format, chapters, pages, refs, ...await getBible(ctx), warnings, flagged: pages.filter((page) => page.status === "flagged").map((page) => page.id), export_options: { pdf: ctx.config.export.pdf, html: ctx.config.export.html } };
 }

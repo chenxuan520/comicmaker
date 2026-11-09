@@ -5,6 +5,8 @@ import type { PromptEngine } from "./prompts.js";
 
 export type { Config, Character, Outfit, Location, PageStoryboard };
 
+export const STRIP_LAYOUT = "strip-4";
+
 export interface Context {
   project: { id: string; title: string; style_desc: string };
   config: Config;

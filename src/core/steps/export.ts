@@ -3,7 +3,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { getChapter, requireStoryboardReady } from "../data.js";
 import { PreconditionError } from "../errors.js";
 import { pngSize } from "../image.js";
-import { pageFile, type Context, type Page, type PageStoryboard } from "../types.js";
+import { pageFile, STRIP_LAYOUT, type Context, type Page, type PageStoryboard } from "../types.js";
 
 function htmlEscape(text: string): string {
   return text.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
@@ -31,6 +31,7 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
   const flagged = rows.filter((page) => page.status === "flagged").map((page) => page.id);
   const paths = { pdf: ctx.config.export.pdf ? `${base}/chapter.pdf` : null, html: ctx.config.export.html ? `${base}/index.html` : null };
   if (!options.force && chapter.status === "exported" && (!paths.pdf || await ctx.fs.readBytes(paths.pdf)) && (!paths.html || await ctx.fs.readText(paths.html))) return { chapter: chapter.id, ...paths, flagged, skipped: true };
+  const isStrip = rows.every((row) => (JSON.parse(row.storyboard) as PageStoryboard).layout === STRIP_LAYOUT);
   const dimensions = ctx.config.image.size.split("x").map(Number);
   const fallbackSize = { width: dimensions[0], height: dimensions[1] };
   const pdf = ctx.config.export.pdf ? await PDFDocument.create() : undefined;
@@ -80,8 +81,8 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
   if (pdf && paths.pdf) await ctx.fs.writeBytes(paths.pdf, await pdf.save());
   if (paths.html) await ctx.fs.writeText(paths.html, `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${htmlEscape(ctx.project.title)} · ${htmlEscape(chapter.title)}</title>
-<style>body{margin:0;background:#eeeae2;color:#242b2a;font-family:system-ui,sans-serif}header,main{max-width:${fallbackSize.width}px;margin:auto}header{padding:24px;box-sizing:border-box}h1{font-size:24px}figure{margin:0 0 24px}img{display:block;width:100%;height:auto;background:white}figcaption{text-align:center;padding:12px;font-size:12px}.text-page{box-sizing:border-box;min-height:70vh;background:white;padding:8%;margin-bottom:24px;line-height:2}.notice{display:grid;place-content:center;text-align:center}</style></head>
-<body><header><h1>${htmlEscape(ctx.project.title)}</h1><p>${htmlEscape(chapter.title)}</p></header><main>${htmlPages.join("\n")}</main></body></html>\n`);
+<style>body{margin:0;background:#eeeae2;color:#242b2a;font-family:system-ui,sans-serif}header,main{max-width:${fallbackSize.width}px;margin:auto}header{padding:24px;box-sizing:border-box}h1{font-size:24px}figure{margin:0 0 24px}img{display:block;width:100%;height:auto;background:white}figcaption{text-align:center;padding:12px;font-size:12px}.text-page{box-sizing:border-box;min-height:70vh;background:white;padding:8%;margin-bottom:24px;line-height:2}.notice{display:grid;place-content:center;text-align:center}${isStrip ? ".strip{background:white}.strip header,.strip main{max-width:720px}.strip figure{margin:0}.strip figcaption{padding:8px 12px;text-align:right;color:#59665e}.strip .text-page{margin-bottom:0}" : ""}</style></head>
+<body${isStrip ? ' class="strip" data-format="strip"' : ""}><header><h1>${htmlEscape(ctx.project.title)}</h1><p>${htmlEscape(chapter.title)}</p>${isStrip ? "<p>手机条漫 · 单列四格 · 向下滑动阅读</p>" : ""}</header><main>${htmlPages.join("\n")}</main></body></html>\n`);
   await ctx.db.run("UPDATE chapters SET status = 'exported' WHERE id = ?", [chapter.id]);
   ctx.log("info", `Exported chapter ${chapter.id}`, { ...paths, flagged });
   return { chapter: chapter.id, ...paths, flagged, skipped: false };

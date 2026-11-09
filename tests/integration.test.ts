@@ -18,7 +18,7 @@ import type { budgetReport } from "../src/core/budget.js";
 import type { AiProvider, ProjectListItem, StructuredRequest } from "../src/core/ports.js";
 import type { getStatus } from "../src/core/status.js";
 import type { Attempt, Ref } from "../src/core/types.js";
-import { extraction, fixture, MockAi, mockOutput, novel, png, repository } from "./helpers.js";
+import { extraction, fixture, MockAi, mockOutput, novel, png, repository, storyboard, visual } from "./helpers.js";
 import { startMockOpenai } from "./mockOpenai.js";
 
 type BudgetReport = Awaited<ReturnType<typeof budgetReport>>;
@@ -561,6 +561,90 @@ test("backend real-SDK jobs share the generation pipeline and serve resolvable H
   const workspace = await api<{ projects: ProjectListItem[]; job: Job }>(server.url, "/api/workspace");
   assert.equal(workspace.projects[0].completed_chapters, 1);
   assert.equal(workspace.job.status, "completed");
+});
+
+test("project format switching generates scrolling four-panel strips and preserves their saved format", { timeout: 30_000 }, async (t) => {
+  const ai = new MockAi();
+  const strip = {
+    ...structuredClone(storyboard), layout: "strip-4",
+    panels: Array.from({ length: 4 }, (_, index) => ({
+      ...structuredClone(storyboard.panels[index % 3]), id: `p${index + 1}`, row: index + 1, size: "wide" as const,
+      dialogue: index < 3 ? storyboard.panels[index].dialogue : [], beat_ids: index < 3 ? storyboard.panels[index].beat_ids : [],
+    })),
+  };
+  ai.onStructured = (request) => {
+    if (request.schema_name === "storyboard") return { pages: [strip, { ...structuredClone(strip), page_no: 2 }] };
+    if (request.schema_name === "review_text") return { panels: strip.panels.map((panel, index) => ({ panel: index + 1, texts: panel.dialogue.map((dialogue) => dialogue.text) })) };
+    if (request.schema_name === "review_visual") return { ...visual, panel_count: 4, characters: strip.panels.map((_, index) => ({ ...visual.characters[0], panel: index + 1 })) };
+    return mockOutput(request);
+  };
+  const f = await localFixture(t, ai);
+  const server = await startServer(f.workspace, { host: "127.0.0.1", port: 0 });
+  f.cleanup.push(server.close);
+  for (const id of ["strip-book", "page-book"]) await api(server.url, "/api/projects", json("POST", { id, title: id }), 201);
+  const original = await api<ConfigResponse>(server.url, "/api/config?project=strip-book");
+  assert.equal(original.merged.storyboard.format, "page");
+  const stripYaml = stringify(mergeConfig(parse(original.yaml), { storyboard: { format: "strip", min_panels: 1, max_panels: 1 } }));
+  const saved = await api<ConfigResponse>(server.url, "/api/config?project=strip-book", json("PUT", { yaml: stripYaml }));
+  assert.equal(saved.merged.storyboard.format, "strip");
+  assert.equal(saved.sources["storyboard.format"], "project");
+  assert.equal((await api<ApiStatus>(server.url, "/api/projects/strip-book")).comic_format, "strip");
+  assert.equal((await api<ApiStatus>(server.url, "/api/projects/page-book")).comic_format, "page");
+  await api(server.url, "/api/config?project=strip-book", json("PUT", { yaml: stringify(mergeConfig(parse(stripYaml), { storyboard: { format: "horizontal" } })) }), 400);
+  assert.equal((await api<ConfigResponse>(server.url, "/api/config?project=strip-book")).yaml, stripYaml);
+  assert.equal(ai.structuredCalls.length + ai.imageCalls.length, 0);
+  assert.equal((await api<BudgetReport>(server.url, "/api/budget")).spent_usd, 0);
+
+  await api(server.url, "/api/projects/strip-book/import", { method: "POST", headers: { "Content-Type": "text/plain; charset=utf-8" }, body: novel });
+  await runJob(server.url, "strip-book", { action: "prepare" });
+  for (const [kind, target] of [["style", "project"], ["outfit", "lin_qing.daily"], ["location", "qinglan_peak"]]) {
+    const generated = await runJob<{ refs: Ref[] }>(server.url, "strip-book", { action: "refs", kind, target });
+    await runJob(server.url, "strip-book", { action: "lock", ref_id: generated.result.refs[0].id });
+  }
+  const run = await runJob<RunResult>(server.url, "strip-book", { action: "run", chapter: 1 });
+  assert.deepEqual(run.result.rendering.pages.map((page) => [page.id, page.status]), [["001-p01", "passed"], ["001-p02", "passed"]]);
+  assert.deepEqual(run.result.rendering.flagged, []);
+  const status = await api<ApiStatus>(server.url, "/api/projects/strip-book");
+  assert.deepEqual(status.pages.map((page) => page.format), ["strip", "strip"]);
+  for (const page of status.pages) {
+    assert.equal(page.storyboard.layout, "strip-4");
+    assert.deepEqual(page.storyboard.panels.map((panel: { row: number }) => panel.row), [1, 2, 3, 4]);
+  }
+  assert.match(ai.structuredCalls.find((request) => request.schema_name === "adapt")!.user, /每组四个全宽横向画格/);
+  assert.match(ai.structuredCalls.find((request) => request.schema_name === "storyboard")!.system, /layout 必须为 strip-4/);
+  assert.match(ai.structuredCalls.find((request) => request.schema_name === "review_visual")!.user, /四格数量正确不代表版式正确/);
+  for (const request of ai.imageCalls.slice(3)) assert.match(request.prompt, /Exactly four landscape panels/);
+  const fileBase = `${server.url}/api/projects/strip-book/files/`;
+  const htmlUrl = new URL(run.result.export.html!, fileBase);
+  const html = await (await fetch(htmlUrl)).text();
+  assert.ok(html.includes('data-format="strip"'));
+  assert.ok(html.includes("max-width:720px"));
+  assert.ok(html.includes("手机条漫 · 单列四格"));
+  const sources = [...html.matchAll(/<img[^>]+src="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(sources, ["../pages/p01.png", "../pages/p02.png"]);
+  for (const source of sources) assert.deepEqual(new Uint8Array(await (await fetch(new URL(source, htmlUrl))).arrayBuffer()), png);
+  if (f.pdf) assert.equal((await PDFDocument.load(await (await fetch(new URL(run.result.export.pdf!, fileBase))).arrayBuffer())).getPageCount(), 3);
+
+  const calls = ai.imageCalls.length + ai.structuredCalls.length;
+  const budget = await api<BudgetReport>(server.url, "/api/budget");
+  await api(server.url, "/api/config?project=strip-book", json("PUT", { yaml: stringify(mergeConfig(parse(stripYaml), { storyboard: { format: "page" } })) }));
+  const rerun = await runJob<RunResult>(server.url, "strip-book", { action: "run", chapter: 1 });
+  assert.equal(rerun.result.adaptation.skipped, true);
+  assert.ok(rerun.result.rendering.pages.every((page) => page.skipped));
+  assert.equal(rerun.result.export.skipped, true);
+  assert.equal(ai.imageCalls.length + ai.structuredCalls.length, calls);
+  assert.deepEqual(await api(server.url, "/api/budget"), budget);
+  const unchanged = await api<ApiStatus>(server.url, "/api/projects/strip-book");
+  assert.equal(unchanged.comic_format, "page");
+  assert.deepEqual(unchanged.pages.map((page) => [page.format, page.final_attempt_id]), status.pages.map((page) => [page.format, page.final_attempt_id]));
+  await runJob(server.url, "strip-book", { action: "export", chapter: 1, force: true });
+  assert.ok((await (await fetch(htmlUrl)).text()).includes('data-format="strip"'));
+  await runJob(server.url, "strip-book", { action: "redo", page_id: "001-p01", note: "保留从上到下的四个横向画格。" });
+  assert.match(ai.imageCalls.at(-1)!.prompt, /Exactly four landscape panels/);
+  assert.match(ai.structuredCalls.at(-1)!.user, /手机条漫版式检查/);
+  assert.deepEqual(new Uint8Array(await readFile(join(f.root, "projects/strip-book/chapters/001/attempts/p01-a1.png"))), png);
+  assert.equal((await api<ApiStatus>(server.url, "/api/projects/strip-book")).refs.filter((ref) => ref.status === "locked").length, 3);
+  assert.equal(f.mock.requests.length, 0);
 });
 
 test("backend permits only one generation, cancels the image signal and resumes with immutable saved progress", { timeout: 30_000 }, async (t) => {

@@ -10,6 +10,7 @@ export class PromptEngine {
 
   constructor(private readonly store: TemplateStore, private readonly globals: Record<string, unknown>) {
     this.engine.registerHelper("json", (value: unknown) => JSON.stringify(value, null, 2));
+    this.engine.registerHelper("eq", (left: unknown, right: unknown) => left === right);
     this.engine.registerHelper("numbered", (value: string[]) => value.map((paragraph, index) => `[${index + 1}] ${paragraph}`).join("\n"));
     this.engine.registerHelper("join", (value: unknown[], separator: string) => value.join(separator));
   }

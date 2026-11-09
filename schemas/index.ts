@@ -304,6 +304,7 @@ export const configSchema = z
       .passthrough(),
     storyboard: z
       .object({
+        format: z.enum(["page", "strip"]).default("page"),
         min_panels: positiveInteger,
         max_panels: positiveInteger,
         max_bubble_chars: positiveInteger,

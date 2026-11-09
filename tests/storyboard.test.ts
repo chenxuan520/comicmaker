@@ -8,6 +8,7 @@ import { Budget } from "../src/core/budget.js";
 import { ComicError, PreconditionError } from "../src/core/errors.js";
 import type { AiProvider, LogLevel, ProjectFs, StructuredRequest, TemplateStore } from "../src/core/ports.js";
 import { PromptEngine } from "../src/core/prompts.js";
+import { getStatus } from "../src/core/status.js";
 import { adaptChapter, saveStoryboard } from "../src/core/steps/adapt.js";
 import { exportChapter } from "../src/core/steps/export.js";
 import { redoPage, renderChapter } from "../src/core/steps/render.js";
@@ -61,6 +62,17 @@ function makePage(pageNo = 1): PageStoryboard {
       action: `Page ${pageNo}, panel ${index + 1}`,
       dialogue: index === 0 ? [{ speaker: "hero", type: "speech", text: "\u4f60\u6765\u4e86\u3002" }] : [],
       beat_ids: index === 0 ? ["b1"] : [],
+    })),
+  };
+}
+
+function makeStrip(pageNo = 1): PageStoryboard {
+  const page = makePage(pageNo);
+  return {
+    ...page, layout: "strip-4",
+    panels: Array.from({ length: 4 }, (_, index) => ({
+      ...structuredClone(page.panels[0]), id: `p${index + 1}`, row: index + 1, size: "wide",
+      dialogue: index === 0 ? page.panels[0].dialogue : [], beat_ids: index === 0 ? ["b1"] : [],
     })),
   };
 }
@@ -143,6 +155,54 @@ test("Chinese counting includes Han code points and Chinese punctuation, not Lat
 test("valid storyboards do not require render-time color checks", () => {
   const bible = makeBible();
   assert.deepEqual(validateStoryboard([makePage()], makeAdaptation().scenes, bible, makeRefs(bible), makeConfig()), []);
+});
+
+test("comic format defaults to page and rejects unknown formats", () => {
+  const legacy = structuredClone(defaults);
+  delete (legacy.storyboard as Partial<Config["storyboard"]>).format;
+  assert.equal(configSchema.parse(legacy).storyboard.format, "page");
+  assert.throws(() => makeConfig({ format: "horizontal" as Config["storyboard"]["format"] }));
+});
+
+test("strip storyboards use four full-width rows rather than paged panel limits", () => {
+  const bible = makeBible();
+  assert.deepEqual(validateStoryboard([makeStrip()], makeAdaptation().scenes, bible, makeRefs(bible), makeConfig({ format: "strip", min_panels: 1, max_panels: 1 })), []);
+  assert.ok(validateStoryboard([makeStrip()], makeAdaptation().scenes, bible, makeRefs(bible), makeConfig()).some((issue) => issue.detail.includes("Paged format")));
+});
+
+test("strip storyboards reject grids, out-of-order rows, and non-wide panels", () => {
+  const bible = makeBible();
+  const strip = makeStrip();
+  const short = { ...strip, panels: strip.panels.slice(0, 3) };
+  const long = { ...strip, panels: [...strip.panels, { ...strip.panels[3], id: "p5", row: 5 }] };
+  const grid = { ...strip, layout: "2 | 2" };
+  const rows = structuredClone(strip);
+  rows.panels[1].row = 1;
+  const narrow = structuredClone(strip);
+  narrow.panels[1].size = "medium";
+  for (const page of [short, long, grid, rows, narrow]) {
+    const issues = validateStoryboard([page], makeAdaptation().scenes, bible, makeRefs(bible), makeConfig({ format: "strip" }));
+    assert.ok(issues.some((issue) => issue.type === "pacing" && /strip/i.test(issue.detail)));
+  }
+});
+
+test("changing generation format leaves completed pages and selected images untouched", async (t) => {
+  const page = makePage();
+  const h = await harness(t, [makeAdaptation(), { pages: [page] }, pass]);
+  await adaptChapter(h.ctx, 1);
+  const attempt = await seedHistory(h, 1, 1);
+  const calls = h.calls.length;
+  const original = structuredClone(h.bytes.get("chapters/001/pages/p01.png"));
+  h.ctx.config.storyboard.format = "strip";
+  const result = await adaptChapter(h.ctx, 1) as { skipped: boolean };
+  const status = await getStatus(h.ctx, 1);
+  assert.equal(result.skipped, true);
+  assert.equal(h.calls.length, calls);
+  assert.equal(status.comic_format, "strip");
+  assert.equal(status.pages[0].format, "page");
+  assert.deepEqual(status.pages[0].storyboard, page);
+  assert.equal(status.pages[0].final_attempt_id, attempt);
+  assert.deepEqual(h.bytes.get("chapters/001/pages/p01.png"), original);
 });
 
 test("panel and bubble limits come from configuration", () => {
