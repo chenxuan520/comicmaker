@@ -45,7 +45,20 @@ export default function App() {
   const projectError = projectFailure?.id === selectedId ? projectFailure.error : null;
   const selectedTitle = project?.project.title ?? workspace?.projects.find((item) => item.id === selectedId)?.title;
   const busy = submitting || job?.status === 'running';
-  const canGenerate = Boolean(workspace?.api_key_configured && !workspaceError);
+  const apiKeys = (selectedId ? project : workspace)?.api_keys ?? {
+    text: Boolean(workspace?.api_key_configured),
+    vision: Boolean(workspace?.api_key_configured),
+    image: Boolean(workspace?.api_key_configured),
+  };
+  const reviewRequired = (selectedId ? project : workspace)?.review_required ?? true;
+
+  function canGenerate(action: ActionInput['action']) {
+    if (action === 'lock' || action === 'export') return true;
+    if (!workspace || workspaceError || (selectedId && !project)) return false;
+    if (action === 'prepare' || action === 'adapt') return apiKeys.text;
+    if (action === 'refs') return apiKeys.image;
+    return apiKeys.image && (!reviewRequired || apiKeys.vision) && (action !== 'run' || apiKeys.text);
+  }
 
   useEffect(() => {
     let disposed = false;
@@ -147,7 +160,7 @@ export default function App() {
         <header className="topbar"><div className="breadcrumb"><span>工作室</span><ChevronRight size={13} aria-hidden="true" />{selectedTitle && view !== 'projects' && view !== 'budget' && view !== 'config' && <><span className="breadcrumb-project">{selectedTitle}</span><ChevronRight size={13} aria-hidden="true" /></>}<strong>{viewNames[view]}</strong></div><div className="topbar-actions"><span className="topbar-local"><span aria-hidden="true" />仅在本地</span><button className="icon-button refresh-button" aria-label="刷新工作区和任务状态" title="刷新工作区" onClick={refreshData}><RefreshCw size={17} /></button><button className="button button-small button-ink" onClick={() => setNewProjectOpen(true)} disabled={!workspace}><Plus size={15} aria-hidden="true" /><span>新建作品</span></button></div></header>
         <main id="main-content" className="main-content" tabIndex={-1}>
           {workspaceError && <div className="server-notice notice" role="alert"><CircleAlert size={21} aria-hidden="true" /><div className="notice-copy"><strong>未能连接本地漫画服务</strong><p>在项目目录运行 <code>comic serve</code>。开发模式的 <code>/api</code> 代理连接 <code>127.0.0.1:4321</code>；自动重试期间保留已读取的数据。</p><small>{workspaceError.message}{workspaceError.code ? ` · ${workspaceError.code}` : ''}</small></div><button className="button button-small button-quiet" onClick={refreshData}>重试<ArrowRight size={14} aria-hidden="true" /></button></div>}
-          {workspace && !workspace.api_key_configured && <div className="key-notice notice"><span className="key-notice-mark" aria-hidden="true">!</span><div className="notice-copy"><strong>故事可以先整理，模型密钥还需要就位。</strong><p>在工作区 <code>.env</code> 中设置 <code>OPENAI_API_KEY</code>（或配置的密钥变量）。导入、浏览与编辑仍可使用；生成按钮暂不可用。</p></div><button className="text-link" onClick={() => navigate('config')}>查看配置<ArrowRight size={14} aria-hidden="true" /></button></div>}
+          {(selectedId ? project : workspace) && (!apiKeys.text || !apiKeys.image || (reviewRequired && !apiKeys.vision)) && <div className="key-notice notice"><span className="key-notice-mark" aria-hidden="true">!</span><div className="notice-copy"><strong>故事可以先整理，模型密钥还需要就位。</strong><p>按{selectedId ? '当前作品' : '工作区'}配置，在工作区 <code>.env</code> 中设置 <code>OPENAI_API_KEY</code>、<code>DEEPSEEK_API_KEY</code>、<code>ARK_API_KEY</code> 或 <code>DASHSCOPE_API_KEY</code>（或配置的密钥变量）。缺少所需密钥的生成步骤暂不可用；导入、浏览、编辑、锁定与导出仍可使用。密钥状态仅表示已配置，未验证有效性或模型能力。</p></div><button className="text-link" onClick={() => navigate('config')}>查看配置<ArrowRight size={14} aria-hidden="true" /></button></div>}
           {notice && <div className="notice notice-success" role="status"><span className="success-marker" aria-hidden="true" /><div className="notice-copy">{notice}</div><button className="icon-button" aria-label="关闭操作提示" onClick={() => setNotice(null)}><X size={16} /></button></div>}
           {actionError && !confirmation && <ErrorNotice error={actionError} />}
           {job && <JobPanel key={job.id} job={job} projects={workspace?.projects ?? []} busy={submitting} onCancel={() => { setCancelError(null); setCancelJob(job); }} />}

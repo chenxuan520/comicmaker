@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import { ulid } from "ulid";
 import { z } from "zod";
-import { configSchema } from "../../schemas/index.js";
+import { configSchema, type Config } from "../../schemas/index.js";
 import { budgetReport } from "../core/budget.js";
 import { ComicError, errorInfo, PreconditionError } from "../core/errors.js";
 import { createProject, importNovel } from "../core/project.js";
@@ -14,6 +14,7 @@ import { exportChapter } from "../core/steps/export.js";
 import { prepareBook } from "../core/steps/prepare.js";
 import { generateRefs, lockRef } from "../core/steps/refs.js";
 import { redoPage, renderChapter } from "../core/steps/render.js";
+import { aiKeys } from "./ai.js";
 import { apiKey, loadConfig, mergeConfig, parseConfigYaml, validateConfig } from "./config.js";
 import { exportFont, WorkspaceRuntime } from "./runtime.js";
 import { LocalTemplateStore } from "./templates.js";
@@ -57,6 +58,11 @@ async function body(request: IncomingMessage, limit: number): Promise<Uint8Array
 }
 
 const contentTypes: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".pdf": "application/pdf", ".ico": "image/x-icon", ".woff2": "font/woff2" };
+
+async function modelReadiness(workspace: string, config: Config) {
+  const keys = await aiKeys(workspace, config);
+  return { api_keys: { text: Boolean(keys.text), vision: Boolean(keys.vision), image: Boolean(keys.image) }, review_required: config.review.enabled && Object.values(config.review.checks).some(Boolean) };
+}
 
 export async function startServer(workspace: WorkspaceRuntime, options: { host: string; port: number }) {
   if (!["127.0.0.1", "localhost", "::1"].includes(options.host)) throw new PreconditionError("Web studio only supports loopback hosts");
@@ -138,7 +144,7 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
       const limit = loaded.config.web.max_upload_mb * 1024 * 1024;
       const jsonBody = async () => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(await body(request, limit)));
       if (request.method === "GET" && url.pathname === "/api/workspace") {
-        replyJson(200, { projects: await workspace.store.list(), current_project: await workspace.currentProject(), api_key_configured: Boolean(await apiKey(workspace.root, loaded.config)), workspace_path: workspace.root, settings: { poll_interval_ms: loaded.config.web.poll_interval_ms }, job }); return;
+        replyJson(200, { projects: await workspace.store.list(), current_project: await workspace.currentProject(), api_key_configured: Boolean(await apiKey(workspace.root, loaded.config.openai)), ...await modelReadiness(workspace.root, loaded.config), workspace_path: workspace.root, settings: { poll_interval_ms: loaded.config.web.poll_interval_ms }, job }); return;
       }
       if (request.method === "GET" && url.pathname === "/api/budget") { replyJson(200, await budgetReport(workspace.ledger, loaded.config.budget)); return; }
       if (url.pathname === "/api/jobs/current" && request.method === "GET") { replyJson(200, { job }); return; }
@@ -189,7 +195,7 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
           if (parts.length === 3 && request.method === "GET") {
             const status = await getStatus(handle.ctx);
             const fileUrl = (path: string) => `/api/projects/${encodeURIComponent(id)}/files/${path.split("/").map(encodeURIComponent).join("/")}`;
-            replyJson(200, { ...status, pages: status.pages.map((page) => ({ ...page, image_url: page.image_path ? `${fileUrl(page.reading_image_path ?? page.image_path)}?attempt=${page.final_attempt_id}${page.reading_image_path ? `&kb=${handle.ctx.config.export.reading_image_kb}` : ""}` : null, original_image_url: page.image_path ? `${fileUrl(page.image_path)}?attempt=${page.final_attempt_id}` : null })), refs: status.refs.map((ref) => ({ ...ref, image_url: fileUrl(ref.path!) })) }); return;
+            replyJson(200, { ...status, ...await modelReadiness(workspace.root, handle.ctx.config), pages: status.pages.map((page) => ({ ...page, image_url: page.image_path ? `${fileUrl(page.reading_image_path ?? page.image_path)}?attempt=${page.final_attempt_id}${page.reading_image_path ? `&kb=${handle.ctx.config.export.reading_image_kb}` : ""}` : null, original_image_url: page.image_path ? `${fileUrl(page.image_path)}?attempt=${page.final_attempt_id}` : null })), refs: status.refs.map((ref) => ({ ...ref, image_url: fileUrl(ref.path!) })) }); return;
           }
           if (parts[3] === "import" && request.method === "POST") {
             replyJson(200, await importNovel(handle.ctx, await body(request, limit), { force: url.searchParams.get("force") === "true" })); return;

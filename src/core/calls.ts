@@ -16,7 +16,7 @@ export function isTimeout(error: unknown): boolean {
 
 export function isRefusal(error: unknown): boolean {
   const detail = error as { code?: string; message?: string; error?: unknown };
-  return apiStatus(error) === 400 && /moderation|content.?policy|safety|content_filter/i.test(`${detail?.code} ${detail?.message} ${JSON.stringify(detail?.error)}`);
+  return apiStatus(error) === 400 && /moderation|content.?policy|safety|content.?filter|data.?inspection.?failed|sensitive.?content/i.test(`${detail?.code} ${detail?.message} ${JSON.stringify(detail?.error)}`);
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {

@@ -46,12 +46,12 @@ export function Studio({ workspace, project, onNew, onView, onChapter, onImporte
               <p className="section-description">提取角色、服装与地点，为每一章生成摘要。接下来，再为它们建立统一的视觉设定。</p>
               {prepared && <div className="bible-counts"><span><strong>{project.characters.length}</strong> 位角色</span><span><strong>{project.outfits.length}</strong> 套服装</span><span><strong>{project.locations.length}</strong> 处地点</span></div>}
               <div className="panel-actions">
-                <button className="button button-primary" disabled={actions.busy || !actions.canGenerate || !project.chapters.length}
+                <button className="button button-primary" disabled={actions.busy || !actions.canGenerate('prepare') || !project.chapters.length}
                   onClick={() => actions.onAction({ action: 'prepare', force, ignore_limit: ignoreLimit })}><FileText size={16} aria-hidden="true" />{prepared ? '继续预处理' : '开始全书预处理'}</button>
                 {prepared && <button className="button button-quiet" onClick={() => onView('refs')}>去设定图册<ArrowRight size={16} aria-hidden="true" /></button>}
               </div>
               <RunOptions force={force} ignoreLimit={ignoreLimit} onForce={setForce} onIgnoreLimit={setIgnoreLimit} disabled={actions.busy} />
-              {!actions.canGenerate && <p className="field-help">配置工作区 .env 中的模型密钥后，才能开始预处理。</p>}
+              {!actions.canGenerate('prepare') && <p className="field-help">按当前作品的文本服务配置工作区 .env 中的密钥后，才能开始预处理。</p>}
             </section>
           </div>
           <aside className="studio-notes">

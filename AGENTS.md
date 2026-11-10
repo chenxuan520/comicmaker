@@ -21,6 +21,7 @@ pnpm build
 ```
 
 - 测试使用 `tests/helpers.ts` 的隔离临时工作区与 `MockAi`，或 `tests/mockOpenai.ts` 的回环模拟服务。CLI 子进程设置独立 `COMIC_WORKSPACE` 与测试密钥；不得复用用户工作区、真实 token 或进行真实收费请求。mock 成功不等于付费 API 或生成质量已验证。
+- 用户已授权：本项目代码改动完成审查与验证后，直接 `commit`、`push` 本次相关文件，不再逐次确认；提交前检查完整 diff 与敏感文件，不夹带无关改动。该授权不改变收费、预算和服务操作边界。
 
 ## 数据与费用边界
 

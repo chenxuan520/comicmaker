@@ -18,6 +18,9 @@ pricing:
   gpt-image-2.6-flare: { text_in: 5, image_in: 8, image_out: 30 }
 
 image:
+  provider: openai
+  base_url: null
+  api_key_env: null
   model: gpt-image-2.6-sunburst
   size: "1024x1536"
   aspect_ratio: "2:3"
@@ -45,6 +48,9 @@ storyboard:
   reading_order: ltr
 
 review:
+  provider: openai
+  base_url: null
+  api_key_env: null
   enabled: true
   base_score: 100
   max_attempts: 3
@@ -64,6 +70,9 @@ refs:
   style_sample_text: "师父，弟子来了。"
 
 llm:
+  provider: openai
+  base_url: null
+  api_key_env: null
   full_book_max_tokens: 260000
   chunk_chapters: 20
   chars_per_token: 2

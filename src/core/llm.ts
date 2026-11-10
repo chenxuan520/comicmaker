@@ -17,7 +17,7 @@ export async function structuredCall<T>(ctx: Context, options: {
   images?: ImageInput[];
   estimate?: number;
 }): Promise<T> {
-  ctx.ai.ready();
+  ctx.ai.ready(options.images?.length ? "vision" : "text");
   const basePrompt = await ctx.prompts.pair(options.template, options.data);
   let prompt = basePrompt;
   const responseFormat = zodResponseFormat(options.schema, options.template.replace(/[^a-zA-Z0-9_-]/g, "_"));

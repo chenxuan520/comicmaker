@@ -37,7 +37,7 @@ pnpm start
 OPENAI_API_KEY=your-provider-api-key
 ```
 
-密钥只放进程环境或工作区 `.env`，不提交、不打印，也不写入 YAML、仓库根目录 `.env` 或提示词；进程环境优先。`openai.api_key_env` 可改变量名，`openai.base_url` 可改兼容服务地址，均在 YAML 配置。**Web UI 不提供密钥输入或保存入口。**
+密钥只放进程环境或工作区 `.env`，不提交、不打印，也不写入 YAML、仓库根目录 `.env` 或提示词；进程环境优先。`openai.api_key_env` 可改变量名，`openai.base_url` 可改兼容服务地址，均在 YAML 配置。DeepSeek、Seedream 和千问使用各自的密钥变量，见下文「模型服务」。**Web UI 不提供密钥输入或保存入口。**
 
 ## 本地 Web
 
@@ -235,7 +235,72 @@ pnpm comic export -p demo-book --chapter 1 --force
 视觉审查未返回分镜中的某个角色时，默认按 0 分判失败并触发重抽；远景或背身角色较多时可设 `review.missing_character: ignore` 忽略未返回项，只对模型实际返回的角色打分，减少无谓重抽。
 
 默认模型名与 `pricing` 只是仓库配置快照。
-先确认服务商与账户实际支持的模型、上下文、图像尺寸和参考图编辑能力，再在覆盖层调整 `models`、`image.model` 与 `pricing`。单价单位为美元 / 百万 token，不随服务商自动更新；换服务商或计费档位时须自行核对，缺单价不代表免费。
+先确认服务商与账户实际支持的模型、上下文、图像尺寸和参考图编辑能力，再在覆盖层调整 `models`、`image.model` 与 `pricing`。token 单价单位为美元 / 百万 token，`per_image` 为美元 / 张；均不随服务商自动更新，换服务商或计费档位时须自行核对，缺单价不代表免费。
+
+### 模型服务
+
+文本、图像审查和生图可以使用不同服务与密钥，CLI 和 Web 共用同一适配和预算流程。默认仍全部使用原有 `openai` 配置，不自动切换模型或覆盖已有工作区。
+
+| 配置 | 支持的 provider | 默认地址与密钥变量 |
+| --- | --- | --- |
+| `llm.provider` | `openai`、`deepseek` | OpenAI 沿用 `openai`；DeepSeek 为 `https://api.deepseek.com` / `DEEPSEEK_API_KEY` |
+| `review.provider` | `openai`、`deepseek` | 同上；只负责接收图片的 OCR 和画面审查 |
+| `image.provider` | `openai`、`seedream`、`qwen` | Seedream 为 `https://ark.cn-beijing.volces.com/api/v3` / `ARK_API_KEY`；千问为 `https://dashscope.aliyuncs.com/api/v1` / `DASHSCOPE_API_KEY` |
+
+三组均可用 `base_url`、`api_key_env` 覆盖地址与密钥变量；默认 `null` 表示使用表中的服务默认值。转发服务可指定自己的地址和变量名，但必须实现所选 provider 的协议，不能把千问生图的原生地址换成 `/compatible-mode/v1`。地域地址与密钥必须配套，Seedream 的 Endpoint ID 也可作为 `image.model`。
+
+在工作区 `.env` 中只配置实际使用的服务，例如：
+
+```dotenv
+DEEPSEEK_API_KEY=your-deepseek-api-key
+ARK_API_KEY=your-ark-api-key
+DASHSCOPE_API_KEY=your-dashscope-api-key
+OPENAI_API_KEY=your-vision-provider-api-key
+```
+
+**DeepSeek 文本 + Seedream 生图**的覆盖示例：
+
+```yaml
+llm:
+  provider: deepseek
+models:
+  extract: deepseek-flash
+  adapt: deepseek-flash
+  storyboard: deepseek-flash
+  storyboard_review: deepseek-flash
+  rewrite: deepseek-flash
+image:
+  provider: seedream
+  model: doubao-seedream-4-5-251128
+  size: "1664x2496"
+```
+
+DeepSeek 使用 Chat Completions 的 `json_object`，适配层把 JSON Schema 加入提示词，返回结果仍经过 Zod 校验及现有重试。模型名不硬编码：可选择账户实际开放的 DeepSeek 模型；网关中的 `deepseek-chat` / `deepseek-reasoner` 也走相同协议。`models.extract` 同时用于设定提取、合并和摘要；全书分块阈值 `llm.full_book_max_tokens` 应符合所选模型上下文。
+
+上述配置保留原有图像审查服务和 `models.review_text` / `models.review_visual`，并不把文字识别误当成纯文本调用。如果要让 DeepSeek 同时审图，需明确配置 `review.provider: deepseek` 和两个审查模型，例如支持视觉的 `deepseek-flash`；不能用不支持图片的文本模型替代。仅配置文本密钥即可预处理，缺少生图密钥不会阻止它。Web 按当前作品、具体步骤检查所需密钥；这个状态只表示变量有值，不代表鉴权或模型能力已验证。
+
+**千问生图**可将上例的 `image` 换为：
+
+```yaml
+image:
+  provider: qwen
+  model: qwen-image-2.0
+  size: "1024x1536"
+  max_refs: 3
+```
+
+支持千问同步多模态生图接口，例如 `qwen-image-2.0` / `qwen-image-2.0-pro` 及同协议的版本模型，包含文生图与参考图生图。不会偷偷丢弃参考图或将编辑模型自动换成别的模型；所选型号必须支持当前请求。千问 2.0 最多输入 3 张参考图（含画风），正向提示词上限 1300 token，服务会截断超出部分；较长漫画提示词需通过现有模板覆盖精简，不能把本地 mock 通过当成整章生成质量已验证。
+
+Seedream 用 JSON 传入参考图，不走 OpenAI 的 multipart 图片编辑接口；支持 4.0 / 4.5 / 5.0 同协议单图生成。不同版本的尺寸下限不同，4.5 / 5.0 lite 不能沿用默认 `1024x1536`，上例使用 2:3 的 `1664x2496`。Seedream 返回 JPEG 时，适配层保持原始分辨率与解码像素转为 PNG，不再有损压缩；返回 PNG 时保留原字节。千问返回的临时图片 URL 会下载到本地，不把 API 密钥发送给图片存储服务。`image.quality` 只发给 OpenAI 图像接口，Seedream / 千问通过型号与尺寸选择生成规格。
+
+两种原生生图服务按返回的成功图片数结算 `pricing.<模型>.per_image`。例如下面的 **0.04 仅为配置示例，不是服务商报价**，应填写实际美元单价；人民币报价需自行换算：
+
+```yaml
+pricing:
+  qwen-image-2.0: { per_image: 0.04 }
+```
+
+缺少单价或成功图片数时仍保留 `budget.estimates.image`，不把兼容字段中的 0 token 当作免费。已生成但下载或解码失败的图片保留费用，不因下载失败自动重发收费生成请求。接口参考：[DeepSeek JSON](https://api-docs.deepseek.com/guides/json_mode)、[DeepSeek 视觉](https://api-docs.deepseek.com/guides/vision)、[Seedream](https://www.volcengine.com/docs/82379/1541523)、[千问生图](https://help.aliyun.com/zh/model-studio/qwen-image-api)、[千问参考图](https://help.aliyun.com/zh/model-studio/qwen-image-edit-api)。
 
 颜色字段未知时保留 `null`，已知时用中文颜色词加 hex，如 `墨黑 #1A1A1A`，不补写原文未给出的颜色；模板省略空字段。摘要 Structured Outputs 使用对象根 `{"chapters":[{"chapter":1,"summary":"…"}]}`，不是裸数组。
 
@@ -302,10 +367,10 @@ PDF 用 `pdf-lib` 与 `@pdf-lib/fontkit` 嵌入本机字体，中文说明页或
 - 单章验收仍保留一条分镜重复对白提醒。程序校验、文字审查和画面审查通过，不等于叙事问题全部消失；其他章节及长期年龄 / 服装变化的生成效果尚未实测，需人工复核。
 - 同一原稿的首章还完成了 25 组、100 格手机条漫的真实模型验收；同样不代表其他小说或全书的质量保证。
 - 公开代码不依赖验收小说、锁定参考图、账本或生成物；这些数据不随仓库提供。示例项目和小说文件需自行准备，不能直接切换到某个预置验收项目查看成果。
-- 兼容服务需支持 Chat Completions 的 JSON Schema Structured Outputs、视觉输入，以及图像生成 / 多参考图编辑；图像接口需以 `b64_json` 返回 PNG。仅支持文本聊天或图片 URL 的服务不能完成整条流水线，默认模型与单价也需按账户和服务商实际能力核对。
+- OpenAI provider 的兼容服务仍需支持 JSON Schema Structured Outputs、所选审查模型的视觉输入，以及以 `b64_json` 返回 PNG 的生成 / 多参考图编辑；DeepSeek、Seedream 和千问的原生协议适配见上文。新服务仅通过隔离 mock 协议与流水线验证，未进行真实收费 API 或生成质量验收；默认模型与单价需按账户实际能力核对。
 - Web 仅面向回环单用户使用，没有云端部署、多用户认证或持久任务队列；不支持同一工作区的多进程并行制作。
 
-已有工程验证记录为 **176 项自动测试通过**，并通过 `lint`、`typecheck`、`build`。本地自动检查：
+已有工程验证记录为 **200 项自动测试通过**，并通过 `lint`、`typecheck`、`build`。本地自动检查：
 
 ```sh
 pnpm lint

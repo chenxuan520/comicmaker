@@ -47,7 +47,7 @@ export async function initializeWorkspace(repository: string, workspace: string)
   await mkdir(join(workspace, "prompts"), { recursive: true });
   try { await copyFile(join(repository, "config.default.yaml"), join(workspace, "config.yaml"), constants.COPYFILE_EXCL); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
-  try { await writeFile(join(workspace, ".env"), "OPENAI_API_KEY=\n", { flag: "wx", mode: 0o600 }); }
+  try { await writeFile(join(workspace, ".env"), "OPENAI_API_KEY=\nDEEPSEEK_API_KEY=\nARK_API_KEY=\nDASHSCOPE_API_KEY=\n", { flag: "wx", mode: 0o600 }); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
 }
 
@@ -72,8 +72,8 @@ export function validateConfig(config: Config): void {
   new URL(config.openai.base_url);
 }
 
-export async function apiKey(workspace: string, config: Config): Promise<string | undefined> {
-  const key = config.openai.api_key_env;
+export async function apiKey(workspace: string, connection: { api_key_env: string }): Promise<string | undefined> {
+  const key = connection.api_key_env;
   if (process.env[key]) return process.env[key];
   let text: string;
   try { text = await readFile(join(workspace, ".env"), "utf8"); }

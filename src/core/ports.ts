@@ -63,6 +63,7 @@ export interface TokenUsage {
   output_tokens: number;
   text_input_tokens?: number;
   image_input_tokens?: number;
+  image_count?: number;
 }
 
 export interface ImageInput { data: Uint8Array; name: string; label: string }
@@ -85,8 +86,9 @@ export interface ImageRequest {
   signal?: AbortSignal;
 }
 
+export type AiKind = "text" | "vision" | "image";
 export interface AiProvider {
-  ready(): void;
+  ready(kind?: AiKind): void;
   structured(request: StructuredRequest): Promise<{ text: string; usage?: TokenUsage }>;
   image(request: ImageRequest): Promise<{ data: Uint8Array; usage?: TokenUsage }>;
 }

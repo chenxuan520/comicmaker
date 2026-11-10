@@ -283,11 +283,15 @@ export const configSchema = z
           text_in: nonnegativeNumber.optional(),
           image_in: nonnegativeNumber.optional(),
           image_out: nonnegativeNumber.optional(),
+          per_image: nonnegativeNumber.optional(),
         })
         .passthrough(),
     ),
     image: z
       .object({
+        provider: z.enum(["openai", "seedream", "qwen"]).default("openai"),
+        base_url: z.string().url().nullable().default(null),
+        api_key_env: z.string().min(1).nullable().default(null),
         model: modelName,
         size: z.string().regex(/^[1-9]\d*x[1-9]\d*$/),
         aspect_ratio: z.string().regex(/^[1-9]\d*:[1-9]\d*$/),
@@ -319,6 +323,9 @@ export const configSchema = z
       .passthrough(),
     review: z
       .object({
+        provider: z.enum(["openai", "deepseek"]).default("openai"),
+        base_url: z.string().url().nullable().default(null),
+        api_key_env: z.string().min(1).nullable().default(null),
         enabled: z.boolean(),
         base_score: z.number().finite(),
         max_attempts: positiveInteger,
@@ -360,6 +367,9 @@ export const configSchema = z
       .passthrough(),
     llm: z
       .object({
+        provider: z.enum(["openai", "deepseek"]).default("openai"),
+        base_url: z.string().url().nullable().default(null),
+        api_key_env: z.string().min(1).nullable().default(null),
         full_book_max_tokens: positiveInteger,
         chunk_chapters: positiveInteger,
         chars_per_token: positiveNumber,

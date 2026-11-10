@@ -45,7 +45,7 @@ export async function generateImage(ctx: Context, options: {
   path: (seq: number) => string;
 }): Promise<Attempt> {
   ctx.signal?.throwIfAborted();
-  ctx.ai.ready();
+  ctx.ai.ready("image");
   const id = ulid();
   const estimate = ctx.config.budget.estimates.image;
   const spendId = await ctx.budget.begin("image", ctx.config.image.model, estimate, id);

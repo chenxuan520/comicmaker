@@ -32,6 +32,8 @@ export interface Workspace {
   projects: ProjectSummary[];
   current_project: string | null;
   api_key_configured: boolean;
+  api_keys?: { text: boolean; vision: boolean; image: boolean };
+  review_required?: boolean;
   workspace_path: string;
   settings?: { poll_interval_ms?: number };
   job: Job | null;
@@ -89,6 +91,8 @@ export interface Entity {
 export interface ProjectDetail {
   project: { id: string; title: string; style_desc: string };
   comic_format: ComicFormat;
+  api_keys?: { text: boolean; vision: boolean; image: boolean };
+  review_required?: boolean;
   chapters: Chapter[];
   pages: ComicPage[];
   refs: Reference[];
@@ -124,7 +128,7 @@ export interface ActionInput {
 
 export interface ActionProps {
   busy: boolean;
-  canGenerate: boolean;
+  canGenerate: (action: ActionInput['action']) => boolean;
   onAction: (input: ActionInput) => void;
 }
 

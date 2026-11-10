@@ -118,7 +118,7 @@ export class Budget {
 }
 
 export function priceUsage(
-  pricing: Record<string, { input?: number; output?: number; text_in?: number; image_in?: number; image_out?: number }>,
+  pricing: Record<string, { input?: number; output?: number; text_in?: number; image_in?: number; image_out?: number; per_image?: number }>,
   model: string,
   usage: TokenUsage | undefined,
   estimate: number,
@@ -126,6 +126,13 @@ export function priceUsage(
   log: Log,
 ): { cost: number; estimated: boolean } {
   const price = pricing[model];
+  if (image && price?.per_image !== undefined) {
+    const count = usage?.image_count;
+    const cost = count === undefined ? NaN : count * price.per_image;
+    if (count !== undefined && Number.isInteger(count) && count >= 0 && Number.isFinite(cost)) return { cost, estimated: false };
+    log("warning", `Missing image count or pricing for ${model}; recording estimate $${estimate}`);
+    return { cost: estimate, estimated: true };
+  }
   const tokens = usage ? [usage.input_tokens, usage.output_tokens, ...(image ? [usage.text_input_tokens, usage.image_input_tokens] : [])] : [];
   const validUsage = usage && tokens.every((value) => typeof value === "number" && Number.isFinite(value) && value >= 0);
   if (!validUsage || !price || (image ? price.text_in === undefined || price.image_in === undefined || price.image_out === undefined || usage.text_input_tokens === undefined || usage.image_input_tokens === undefined : price.input === undefined || price.output === undefined)) {

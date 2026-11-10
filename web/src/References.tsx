@@ -51,7 +51,7 @@ export default function References({ project, busy, canGenerate, onAction }: Act
           <div className="generator-copy"><h2>{selectedKind.label}</h2><p>{selectedKind.description}</p>{kind === 'style' && project.project.style_desc && <p className="style-description">{project.project.style_desc}</p>}</div>
           <div className="generator-controls">
             {kind !== 'style' && <label className="field"><span>指定对象 <small>可选</small></span><select value={target} onChange={(event) => setTarget(event.target.value)} disabled={busy}><option value="">所有未锁定的{kind === 'outfit' ? '服装' : '地点'}</option>{targets.map((item) => <option value={item.id} key={item.id}>{targetName(kind, item.id)} · {item.id}</option>)}</select></label>}
-            <button className="button button-primary" type="submit" disabled={busy || !canGenerate || selectedTargetLocked || (kind !== 'style' && !styleLocked)}><Plus size={16} aria-hidden="true" />{selectedTargetLocked ? '设定已锁定' : '生成参考图候选'}</button>
+            <button className="button button-primary" type="submit" disabled={busy || !canGenerate('refs') || selectedTargetLocked || (kind !== 'style' && !styleLocked)}><Plus size={16} aria-hidden="true" />{selectedTargetLocked ? '设定已锁定' : '生成参考图候选'}</button>
           </div>
           {kind !== 'style' && !styleLocked && <p className="generator-hint">请先在「全书画风」中生成并锁定一张画风图，再生成其他设定。</p>}
           {selectedTargetLocked && <p className="generator-hint">这个对象已锁定。已有设定不能重新锁定或替换，也不会因强制执行而解除锁定。</p>}

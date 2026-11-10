@@ -20,9 +20,9 @@ export class ImageResponseError extends Error {
 }
 
 export class OpenAiProvider implements AiProvider {
-  private readonly client: OpenAI;
+  protected readonly client: OpenAI;
 
-  constructor(private readonly options: { apiKey?: string; baseURL: string; llmTimeout: number; imageTimeout: number }) {
+  constructor(protected readonly options: { apiKey?: string; baseURL: string; llmTimeout: number; imageTimeout: number; responseFormat?: "json_object" }) {
     this.client = new OpenAI({ apiKey: options.apiKey || "not-configured", baseURL: options.baseURL, maxRetries: 0 });
   }
 
@@ -30,7 +30,7 @@ export class OpenAiProvider implements AiProvider {
     if (!this.options.apiKey) throw new PreconditionError("API key is not configured. Set the configured key variable in workspace/.env or your environment.");
   }
 
-  private async response<T>(request: { asResponse(): Promise<Response> }): Promise<T> {
+  protected async response<T>(request: { asResponse(): Promise<Response> }): Promise<T> {
     try {
       const response = await request.asResponse();
       try {
@@ -49,6 +49,8 @@ export class OpenAiProvider implements AiProvider {
 
   async structured(request: StructuredRequest) {
     this.ready();
+    const format = request.schema as ResponseFormatJSONSchema;
+    const jsonMode = this.options.responseFormat === "json_object";
     const content: ChatCompletionContentPart[] = [{ type: "text", text: request.user }];
     for (const image of request.images ?? []) {
       content.push({ type: "text", text: image.label });
@@ -56,15 +58,18 @@ export class OpenAiProvider implements AiProvider {
     }
     const response = await this.response<ChatCompletion>(this.client.chat.completions.create({
       model: request.model,
-      messages: [{ role: "system", content: request.system }, { role: "user", content }],
-      response_format: request.schema as ResponseFormatJSONSchema,
+      messages: [
+        { role: "system", content: jsonMode ? `${request.system}\n\nReturn only a JSON object matching this JSON schema (${request.schema_name}):\n${JSON.stringify(format.json_schema.schema)}` : request.system },
+        { role: "user", content: jsonMode && !request.images?.length ? request.user : content },
+      ],
+      response_format: jsonMode ? { type: "json_object" } : format,
     }, { signal: request.signal, timeout: this.options.llmTimeout }));
     const message = response.choices?.[0]?.message;
     const text = message?.refusal ? JSON.stringify({ refusal: message.refusal }) : message?.content ?? "";
     return { text, usage: response.usage ? { input_tokens: response.usage.prompt_tokens, output_tokens: response.usage.completion_tokens } : undefined };
   }
 
-  async image(request: ImageRequest) {
+  async image(request: ImageRequest): Promise<{ data: Uint8Array; usage?: TokenUsage }> {
     this.ready();
     const params = {
       model: request.model, prompt: request.prompt, n: 1,

@@ -2,13 +2,13 @@ import { access, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ulid } from "ulid";
-import { OpenAiProvider } from "../core/ai.js";
 import { Budget, type BudgetPolicy } from "../core/budget.js";
 import { PreconditionError } from "../core/errors.js";
 import { PromptEngine } from "../core/prompts.js";
 import type { AiProvider, Db, Log } from "../core/ports.js";
 import type { Context } from "../core/types.js";
-import { apiKey, initializeWorkspace, loadConfig } from "./config.js";
+import { ConfiguredAiProvider, aiKeys } from "./ai.js";
+import { initializeWorkspace, loadConfig } from "./config.js";
 import { LocalProjectStore } from "./projects.js";
 import { openLedgerDb } from "./sqlite.js";
 import { LocalTemplateStore } from "./templates.js";
@@ -68,7 +68,7 @@ export class WorkspaceRuntime {
         ...handle, config, project, signal: options.signal, log,
         budget: new Budget(this.ledger, id, loaded.workspaceConfig.budget, projectPolicy, options.ignoreLimit),
         prompts: new PromptEngine(new LocalTemplateStore(this.repository, this.root, id), { config, project, vars: config.prompts.vars }),
-        ai: this.provider ?? new OpenAiProvider({ apiKey: await apiKey(this.root, config), baseURL: config.openai.base_url, llmTimeout: config.llm.timeout_sec * 1000, imageTimeout: config.image.timeout_sec * 1000 }),
+        ai: this.provider ?? new ConfiguredAiProvider(config, await aiKeys(this.root, config)),
       };
       for (const model of new Set([...Object.values(config.models), config.image.model])) if (!config.pricing[model]) log("warning", `Pricing is not configured for ${model}; estimates will be used`);
       return {
