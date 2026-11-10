@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import { configSchema, type Adaptation, type Config, type PageStoryboard, type StoryboardIssue } from "../schemas/index.js";
 import { SqliteDb } from "../src/adapters/sqlite.js";
 import { Budget } from "../src/core/budget.js";
+import { entitiesForChapter } from "../src/core/data.js";
 import { ComicError, PreconditionError } from "../src/core/errors.js";
 import type { AiProvider, LogLevel, ProjectFs, StructuredRequest, TemplateStore } from "../src/core/ports.js";
 import { PromptEngine } from "../src/core/prompts.js";
@@ -358,6 +359,42 @@ test("chapter characters without relevant outfits are listed as precondition fai
   const h = await harness(t, [], bible);
   await assert.rejects(adaptChapter(h.ctx, 1), (error: unknown) => error instanceof PreconditionError && error.message.includes("hero (hero)") && (error.details as { characters: string[] }).characters.includes("hero"));
   assert.equal(h.calls.length, 0);
+});
+
+test("later chapters do not require comparison-only characters' outfits or locked references", async (t) => {
+  const bible = makeBible(["hero", "father"]);
+  bible.characters[1].name = "主角父亲";
+  bible.characters[1].aliases = ["父亲"];
+  bible.characters[1].evidence = ["1:1"];
+  bible.outfits[1].chapters = [1];
+  const h = await harness(t, [makeAdaptation(), { pages: [makePage()] }, pass], bible);
+  await h.db.run("INSERT INTO chapters (id, idx, title, text, summary, status) VALUES ('002', 2, 'Chapter two', ?, 'Second summary', 'imported')", ["hero enters Mountain.\n\nhero看起来比主角父亲年轻。"]);
+  await h.db.run("UPDATE refs SET status = 'candidate' WHERE target_id = 'father.daily'");
+  await adaptChapter(h.ctx, 2);
+  assert.deepEqual(JSON.parse(h.calls[0].user).characters.map((character: { id: string }) => character.id), ["hero"]);
+  assert.deepEqual(JSON.parse(h.calls[0].user).outfits.map((outfit: { id: string }) => outfit.id), ["hero.daily"]);
+  assert.equal(h.calls.length, 3);
+  assert.equal((await h.db.get<Ref>("SELECT * FROM refs WHERE target_id = 'father.daily'"))!.status, "candidate");
+});
+
+test("comparison filtering preserves real mentions, chapter evidence and outfit associations", () => {
+  for (const [scenario, text, evidence, chapters, included] of [
+    ["comparison alias", "hero比父亲年轻。", [], [1], false],
+    ["another real mention", "hero比主角父亲年轻。主角父亲来到Mountain。", [], [1], true],
+    ["chapter evidence", "hero比主角父亲年轻。", ["2:1"], [1], true],
+    ["chapter outfit", "hero比主角父亲年轻。", [], [2], true],
+    ["unscoped outfit", "主角父亲来到Mountain。", [], [], true],
+    ["missing outfit", "主角父亲来到Mountain。", [], null, true],
+  ] as const) {
+    const bible = makeBible(["hero", "father"]);
+    bible.characters[1].name = "主角父亲";
+    bible.characters[1].aliases = ["父亲"];
+    bible.characters[1].evidence = [...evidence];
+    if (chapters === null) bible.outfits = bible.outfits.filter((outfit) => outfit.id !== "father.daily");
+    else bible.outfits[1].chapters = [...chapters];
+    const chapter: Chapter = { id: "002", idx: 2, title: "Chapter two", text, summary: null, status: "imported" };
+    assert.equal(entitiesForChapter(bible, chapter).characters.some((character) => character.id === "father"), included, scenario);
+  }
 });
 
 for (const kind of ["style", "outfit", "location"]) {

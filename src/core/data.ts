@@ -25,10 +25,13 @@ export function chapterData(chapter: Chapter) {
 }
 
 export function entitiesForChapter(bible: Bible, chapter: Chapter): Bible {
-  const characters = bible.characters.filter((character) =>
-    character.evidence.some((source) => source.startsWith(`${chapter.idx}:`)) ||
-    [character.name, ...character.aliases.filter((name) => [...name].length > 1)].some((name) => name && chapter.text.includes(name)) ||
-    bible.outfits.some((outfit) => outfit.id.startsWith(`${character.id}.`) && outfit.chapters.includes(chapter.idx)));
+  const characters = bible.characters.filter((character) => {
+    const names = [character.name, ...character.aliases.filter((name) => [...name].length > 1)];
+    const mentionedText = names.reduce((text, name) => name ? text.replaceAll(`比${name}`, "") : text, chapter.text);
+    return character.evidence.some((source) => source.startsWith(`${chapter.idx}:`)) ||
+      names.some((name) => name && mentionedText.includes(name)) ||
+      bible.outfits.some((outfit) => outfit.id.startsWith(`${character.id}.`) && outfit.chapters.includes(chapter.idx));
+  });
   const ids = new Set(characters.map((character) => character.id));
   const outfits = bible.outfits.filter((outfit) => ids.has(outfit.id.split(".")[0]) && (outfit.chapters.length === 0 || outfit.chapters.includes(chapter.idx)));
   const locations = bible.locations.filter((location) => location.chapters.includes(chapter.idx) || chapter.text.includes(location.name));
