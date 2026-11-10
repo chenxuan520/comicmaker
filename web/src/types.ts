@@ -74,6 +74,7 @@ export interface ComicPage {
   final_attempt_id: string | null;
   image_url: string | null;
   original_image_url: string | null;
+  hosted_image_url?: string | null;
   storyboard: unknown;
   reviews?: ReviewRecord[];
 }
@@ -107,7 +108,7 @@ export interface ProjectDetail {
   outfits: Entity[];
   locations: Entity[];
   warnings: string[];
-  export_options: { pdf: boolean; html: boolean };
+  export_options: { pdf: boolean; html: boolean; imgbed?: { enabled: boolean; base_url: string } };
 }
 
 export interface Budget {

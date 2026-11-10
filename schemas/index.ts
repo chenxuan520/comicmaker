@@ -424,6 +424,16 @@ export const configSchema = z
         pdf: z.boolean(),
         html: z.boolean(),
         reading_image_kb: positiveInteger.nullable().default(200),
+        imgbed: z.object({
+          enabled: z.boolean().default(false),
+          base_url: z.string().refine((value) => {
+            if (!URL.canParse(value)) return false;
+            const url = new URL(value);
+            return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password && !value.includes("?") && !value.includes("#");
+          }, "ImgBed base_url must be an HTTP(S) URL without credentials, query or fragment")
+            .transform((value) => new URL(value).href.replace(/\/+$/, ""))
+            .default("https://img.011203.xyz"),
+        }).strict().default({ enabled: false, base_url: "https://img.011203.xyz" }),
         ai_notice_page: z.boolean(),
         ai_notice_text: z.string(),
         font_path: z.string().nullable(),

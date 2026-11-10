@@ -1,5 +1,5 @@
 import type { Config, Character, Outfit, Location, PageStoryboard } from "../../schemas/index.js";
-import type { AiProvider, Db, Log, ProjectFs } from "./ports.js";
+import type { AiProvider, Db, ImageHostUploader, Log, ProjectFs } from "./ports.js";
 import type { Budget } from "./budget.js";
 import type { PromptEngine } from "./prompts.js";
 
@@ -8,6 +8,8 @@ export type { Config, Character, Outfit, Location, PageStoryboard };
 export const STRIP_LAYOUT = "strip-4";
 
 export interface ReadingImages { target_kb: number | null; attempts: Record<string, string> }
+export interface UploadedImage { attempt_id: string; sha256: string; url: string }
+export interface UploadedImages { base_url: string; target_kb: number | null; pages: Record<string, UploadedImage> }
 
 export interface Context {
   project: { id: string; title: string; style_desc: string };
@@ -17,6 +19,7 @@ export interface Context {
   budget: Budget;
   prompts: PromptEngine;
   ai: AiProvider;
+  imageHost?: ImageHostUploader;
   log: Log;
   signal?: AbortSignal;
 }

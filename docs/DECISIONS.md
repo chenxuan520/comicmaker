@@ -2,7 +2,7 @@
 
 以 PRD 为基线，用户后续要求优先；以下记录行为约定，不作为实测完成声明。
 
-- 范围：用户明确新增本地 Web UI，覆盖 PRD 的 v1 Web 排除；仍不做云端部署、图床、多用户或多个项目同时制作。
+- 范围：用户明确新增本地 Web UI 和可选外部 ImgBed 上传，覆盖 PRD 的相关排除；仍不做云端部署、多用户或多个项目同时制作。
 - 分层：CLI 与本地 Web 共用核心流水线；agent 仅用 CLI 遥控，不直接操作项目数据库或图片。
 - 运行时：按 package.json 使用 Node.js >=22.13 的 node:sqlite 与 pnpm 8.15.5，不增加原生图像依赖。
 - 数据位置：代码、模板、文档留在仓库；小说、密钥、账本和全部生成素材仅在被忽略的工作区，COMIC_WORKSPACE 可指向仓库外。
@@ -10,12 +10,14 @@
 - 图片保留：attempts 与 refs 中所有原图只追加、不覆盖、不删除，重做只更新最终 pages 副本与派生导出。
 - 导入：UTF-8 解码失败才尝试 GB18030；切章与清洗由 import.chapter_regex / strip_patterns 配置，不另写 Markdown 解析器。
 - Markdown 原稿：### 第…章标题需通过导入正则匹配，清洗只移除非章节标题、锚点与目录行；导入复制而不修改外部原稿，不调用模型。
-- 强制导入：归档旧 source 后清空章节、页、改编和预处理 / 分镜审查工作状态，保留 attempts、refs、reviews、spend 及原始图片，新原稿需重新 prepare。
+- 强制导入：归档旧 source 后清空章节、页、改编和预处理 / 分镜审查工作状态及图床链接缓存，保留 attempts、refs、reviews、spend 及原始图片，不删除远端图片，新原稿需重新 prepare。
 - 颜色：未知字段为 null，已知颜色使用中文颜色词加六位 hex；不编造原文未给出的设定，模板省略空字段。
 - 结构化摘要：Structured Outputs 使用对象根 {chapters:[...]} 而不是 PRD 的裸数组，继续由 zod 校验。
 - 预处理参数：实际默认配置使用 chunk_chapters=20、chars_per_token=2、summary.max_chars=200，超出 full_book_max_tokens 才按章节分块并合并提取结果。
 - 模型与计价：仓库提供默认模型与单价，不承诺账户可用性、最新价格或普遍兼容；实际模型、上下文与图像能力按服务商核实，替换模型或计费档位时须配置 pricing。
 - 配置与模板：配置按仓库、工作区、项目深度覆盖，数组替换；提示词同三层整文件覆盖，strict Handlebars 渲染，eject 复制当前生效版本。
+- 可选图床：export.imgbed 默认关闭，支持工作区开启与项目覆盖；只在导出时上传选定的最终阅读 JPEG（reading_image_kb=null 时为 PNG），包括 flagged 最终图，不上传参考图、原文或历史候选，不因存在密钥自动开启。
+- 图床恢复：复用 ImgBed multipart 上传协议，不自动重试未知完成状态；成功链接立即保存在 project.db，缓存绑定地址、阅读参数、选定尝试与内容哈希，失败保留已上传页供再次导出续传。公网链接单独提供，本地阅读、HTML/PDF 和 immutable originals 不依赖图床，也不自动部署或发布阅读页。
 - 锁定：每个 (kind,target_id) 最多一张 locked，必须由人指定候选；已锁定图不能替换，force 不能解除锁定，rejected 原图也保留。
 - 强制改编：重建当前章分镜时设置 render.start.* 历史序号基线，保留旧 attempts，不让旧尝试消耗新一轮次数。
 - 手动重做：redo 开启新的配置审查周期，不受历史 max_attempts 用量限制；本轮仍遵守 max_attempts、拒绝处理与预算闸，更新 PDF 时使用 export --force。
@@ -25,7 +27,7 @@
 - 预算报告：budget -p 只过滤工作区策略下的项目花费，不自动展示项目限额，项目策略通过 config -p <id> --project 查看。
 - CLI 选项：项目选择是 -p / --project-id，config --project 是额外返回项目原始值的布尔开关；生成中断为130，通常返回0/1/2/3。
 - Web 任务：每个服务在整个工作区仅一个运行任务，新任务忙时拒绝；取消保留进度与已发出请求的可能费用，不新增多用户或持久任务队列。
-- 密钥：首次工作区 CLI 初始化空 OPENAI_API_KEY 占位，进程环境优先于工作区 .env，变量名与 base_url 可配置，Web 不收集密钥。
+- 密钥：首次工作区 CLI 初始化空服务商和图床凭据占位，进程环境优先于工作区 .env，模型变量名与 base_url 可配置，Web 不收集密钥。图床独立读取 IMG_BED_TOKEN 与 IMG_BED_AUTH_CODE，优先上传权限业务 Token，不使用 CLOUDFLARE_API_TOKEN，不把凭据放入 YAML/URL/日志或上传错误响应。
 - dry-run：run --chapter <n> --dry-run 仅预览现有数据可支持的提示词，缺步骤列 unavailable，不调用 API、不编造改编或分镜结果。
 - PDF 字体：使用 @pdf-lib/fontkit 和本机现有 Unicode 字体，macOS 尝试 Arial Unicode.ttf，其他环境可设 export.font_path 的 TTF/OTF/TTC；不再分发系统字体。
 - 提示词实验：小样本 A/B 不足以推断不同语言模板的普遍优劣；实验记录和生成物留在工作区，不作为公开代码的运行依赖。

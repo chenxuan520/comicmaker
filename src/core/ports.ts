@@ -25,7 +25,7 @@ export interface BlobStore {
 export interface ProjectFs extends BlobStore {}
 
 export interface ImageHostUploader {
-  upload(relPath: string, data: Uint8Array): Promise<string>;
+  upload(relPath: string, data: Uint8Array, signal?: AbortSignal): Promise<string>;
 }
 
 export interface ProjectDefinition {

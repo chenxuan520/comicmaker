@@ -9,6 +9,7 @@ import type { AiProvider, Db, Log } from "../core/ports.js";
 import type { Context } from "../core/types.js";
 import { ConfiguredAiProvider, aiKeys } from "./ai.js";
 import { initializeWorkspace, loadConfig } from "./config.js";
+import { ImgBedUploader, imgBedCredentials } from "./imgbed.js";
 import { LocalProjectStore } from "./projects.js";
 import { openLedgerDb } from "./sqlite.js";
 import { LocalTemplateStore } from "./templates.js";
@@ -69,6 +70,7 @@ export class WorkspaceRuntime {
         budget: new Budget(this.ledger, id, loaded.workspaceConfig.budget, projectPolicy, options.ignoreLimit),
         prompts: new PromptEngine(new LocalTemplateStore(this.repository, this.root, id), { config, project, vars: config.prompts.vars }),
         ai: this.provider ?? new ConfiguredAiProvider(config, await aiKeys(this.root, config)),
+        imageHost: config.export.imgbed.enabled ? new ImgBedUploader({ baseURL: config.export.imgbed.base_url, ...await imgBedCredentials(this.root) }) : undefined,
       };
       for (const model of new Set([...Object.values(config.models), config.image.model])) if (!config.pricing[model]) log("warning", `Pricing is not configured for ${model}; estimates will be used`);
       return {

@@ -2,7 +2,7 @@
 
 **页间（comicmaker）**是本地小说转彩色漫画工作室，支持页漫与手机条漫：一本小说一个项目，提取设定、人工锁定参考图，再逐章改编、分镜、生图、审查与重抽，导出 PDF 和本地 HTML 阅读页。默认页漫模式，一张图生成一页或一个四格组，中文对白直接画进图里，不做程序叠字。
 
-提供 CLI 和本地 Web UI；不做云端部署、图床、多用户或多个项目同时制作。本地指存储与编排在本机，模型调用仍会把相关原文、提示词和参考图发送给配置的服务商。
+提供 CLI 和本地 Web UI，支持默认关闭的外部 ImgBed 上传；不做云端部署、多用户或多个项目同时制作。本地指存储与编排在本机，模型调用仍会把相关原文、提示词和参考图发送给配置的服务商；图床只在明确开启后上传最终阅读图。
 
 **已有单章真实模型验收记录，仍有分镜质量提醒；不代表全书或所有小说均已验证。验证范围与已知限制见文末。**
 
@@ -46,7 +46,7 @@ OPENAI_API_KEY=your-provider-api-key
 | 作品书架 / 工作台 | 新建项目、选择项目、上传 `.txt` / `.md` 小说、全书预处理 |
 | 配置 / 提示词 | 编辑工作区或项目 YAML、查看合并值及来源；浏览模板并保存为项目覆盖 |
 | 视觉设定 | 生成、浏览候选，先由人选择并锁定画风，再锁定服装与地点 |
-| 章节稿台 | 运行章节、逐页浏览、查看分镜与审查、筛选 flagged、带说明重绘、导出 PDF / HTML |
+| 章节稿台 | 运行章节、逐页浏览、查看分镜与审查、筛选 flagged、带说明重绘、导出 PDF / HTML、可选上传阅读图及打开图床链接 |
 | 预算 / 任务 | 查看账本分类、任务进度与日志、取消当前任务 |
 
 只监听回环地址。一个 Web 服务在整个工作区同时只运行一个任务，运行中提交新任务会被拒绝，不是按项目分别并行；取消保留已完成进度，已发出的模型请求仍可能计费。CLI 不支持多进程或多个项目同时制作，也不要与 Web 生成任务混跑；`image.concurrency` 只控制同一章内的页并发。
@@ -81,6 +81,33 @@ export:
 ```
 
 这个值支持工作区和项目覆盖；设为 `null` 使用原始 PNG 阅读和导出。目标不是严格字节上限，极小值或复杂画面可能超出，JPEG 是有损副本。已有章节执行 `export --chapter 1 --force` 即可生成或更新阅读副本，不需重新生图；重绘后也需更新导出。缓存绑定选定尝试和大小设置，不复用旧图的阅读副本。
+
+### 可选 ImgBed 上传
+
+在「章节稿台」勾选「导出时上传最终阅读图」只保存当前作品开关，不立即上传；也可在工作区或项目 YAML 中设置：
+
+```yaml
+export:
+  imgbed:
+    enabled: true
+    base_url: https://img.011203.xyz
+```
+
+默认关闭，凭据存在也不会自动开启。工作区开启由项目继承，项目可显式设为 `false`；开启后手动和定时章节制作都在导出阶段上传。只上传最终选定的阅读 JPEG；`reading_image_kb: null` 时上传最终 PNG。**选定的 flagged 图也会公开**，不上传参考图、原文、未选中或 rejected 候选。关闭只停止未来上传，不删除图床上的已公开副本。
+
+图床业务 Token 需有 `upload` 权限，放进进程环境或工作区 `.env`：
+
+```dotenv
+IMG_BED_TOKEN=your-imgbed-upload-token
+```
+
+只有站点认证码时改用 `IMG_BED_AUTH_CODE`；两者都有时优先 Token，每个变量仍按进程环境优先、工作区 `.env` 兜底解析。**这不是 `CLOUDFLARE_API_TOKEN`，不要将凭据填入 YAML、URL 或日志。** 新工作区初始化两个空占位，已有 `.env` 不会被覆盖。
+
+上传使用 ImgBed 的 multipart `POST /upload`、`file` 字段、Bearer Token 或 `authCode` header，参数为 `returnFormat=full`、`responseFormat=object`、`serverCompress=false`；不指定存储渠道，不再压缩已生成的阅读副本。优先使用服务器返回的 `publicUrl`，否则用 `src`，兼容旧数组响应并解析相对地址，不编造文件链接。
+
+成功链接立即写入 `project.db` 的 `export.upload.<章号>`，按图床地址、阅读大小、选定尝试和内容哈希复用。已有本地导出再次执行 `export --chapter 1` 可补传，不需重新生图；阅读副本与 PDF/HTML 缓存有效时只上传图片，不重建导出或重新要求中文字体；`--force` 更新本地导出，但不会重复上传未变化的已成功图片。失败会停止本次导出，成功页记录保留，再次导出只续传未完成或已变化的页；定时任务失败会暂停。超时、取消或响应/存储失败时，远端可能已经收到了文件，不自动重发请求，重试前应先检查图床。
+
+CLI 导出结果的 `image_urls` 和状态页的 `hosted_image_url` 提供公网链接，Web 画页详情可「打开图床阅读图」。本地 Web、HTML、PDF 仍使用本地图片，不依赖图床可用性，也不发布阅读 HTML 或 PDF。图床链接有效期与存储/流量费用由图床设置决定，本地缓存不巡检远端；这些费用不属于模型 token 账本。更新代码后需重启后端加载适配，Web 不会自动停止旧服务。
 
 ## CLI 流程
 
@@ -251,7 +278,7 @@ pnpm comic export -p demo-book --chapter 1 --force
 | `review.weights` | text_error `30`，major `20`，minor `5`，identity `40`，color `20`，panel_mismatch `50` |
 | `budget` | limit_usd `null`，period `month`，cycle_start_day `1`，timezone `Asia/Shanghai`；estimates.image / llm / full_book 为 `0.25 / 0.05 / 1.0` 美元预估值 |
 | `import` | 普通中文章标题正则，strip_patterns `[]`；Markdown 覆盖示例见上文 |
-| `export` | pdf / html / ai_notice_page `true`，reading_image_kb `200`，ai_notice_text `本作品由 AI 生成`，font_path `null`；text.font_size / margin / line_height `24 / 64 / 36` |
+| `export` | pdf / html / ai_notice_page `true`，reading_image_kb `200`，imgbed.enabled `false`、base_url `https://img.011203.xyz`，ai_notice_text `本作品由 AI 生成`，font_path `null`；text.font_size / margin / line_height `24 / 64 / 36` |
 | `web` | host `127.0.0.1`，port `4321`，poll_interval_ms `2000`，max_upload_mb `20` |
 | `prompts` / `project` | vars `{}`；image_sections `[style, page, references, characters, panels, text_rules, corrections]`；style_desc `清新国风修仙，干净线稿，明亮通透的赛璐璐上色` |
 
@@ -363,7 +390,7 @@ workspace/                         # 或 COMIC_WORKSPACE，全部业务数据不
     logs/
 ```
 
-`project.db` 是状态唯一权威，`ledger.db` 是花费账本；JSON 只是供人查看的镜像，手改不会成为模型输入。`attempts/` 和 `refs/` 的图片永不覆盖或删除，最终 `pages/` 副本与导出文件可更新。备份应保留工作区数据库及完整相对目录，不能只保存 JSON 镜像。默认 HTML 引用 `export/` 内的 JPEG，分享时复制完整 `export/`；关闭阅读压缩后 HTML 引用 `../pages/` PNG，需同时保留 `export/` 与 `pages/` 的相对位置。都不是单文件图像嵌入或云端图床。
+`project.db` 是状态唯一权威，`ledger.db` 是花费账本；JSON 只是供人查看的镜像，手改不会成为模型输入。`attempts/` 和 `refs/` 的图片永不覆盖或删除，最终 `pages/` 副本与导出文件可更新。备份应保留工作区数据库及完整相对目录，不能只保存 JSON 镜像。默认 HTML 引用 `export/` 内的 JPEG，分享时复制完整 `export/`；关闭阅读压缩后 HTML 引用 `../pages/` PNG，需同时保留 `export/` 与 `pages/` 的相对位置。HTML 仍是本地文件引用，不会因图床开关自动发布为云端阅读页。
 
 `import --force` 先归档旧 source，再清空章节、页、改编及预处理 / 分镜审查工作状态；保留历史 attempts、refs、reviews、spend 和原始图片，新原稿必须重新 `prepare`。残留镜像、页副本或导出不能代表新原稿进度；**force 不意味着删除所有历史图片或花费**。
 
@@ -391,9 +418,10 @@ PDF 用 `pdf-lib` 与 `@pdf-lib/fontkit` 嵌入本机字体，中文说明页或
 - 同一原稿的首章还完成了 25 组、100 格手机条漫的真实模型验收；同样不代表其他小说或全书的质量保证。
 - 公开代码不依赖验收小说、锁定参考图、账本或生成物；这些数据不随仓库提供。示例项目和小说文件需自行准备，不能直接切换到某个预置验收项目查看成果。
 - OpenAI provider 的兼容服务仍需支持 JSON Schema Structured Outputs、所选审查模型的视觉输入，以及以 `b64_json` 返回 PNG 的生成 / 多参考图编辑；DeepSeek、Seedream 和千问的原生协议适配见上文。新服务仅通过隔离 mock 协议与流水线验证，未进行真实收费 API 或生成质量验收；默认模型与单价需按账户实际能力核对。
+- ImgBed 接入通过回环模拟服务验证上传协议、缓存、取消及任务互斥；未试传真实作品，也未验证用户图床的业务凭据、存储渠道或实际公网链接可用性。
 - Web 仅面向回环单用户使用，没有云端部署、多用户认证或持久任务队列；不支持同一工作区的多进程并行制作。
 
-已有工程验证记录为 **224 项自动测试通过**，并通过 `lint`、`typecheck`、`build`。本地自动检查：
+已有工程验证记录为 **300 项自动测试通过**，并通过 `lint`、`typecheck`、`build`。本地自动检查：
 
 ```sh
 pnpm lint

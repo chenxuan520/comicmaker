@@ -2,8 +2,8 @@ import { PDFDocument, rgb, type PDFFont } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { getChapter, requireStoryboardReady } from "../data.js";
 import { PreconditionError } from "../errors.js";
-import { pngSize } from "../image.js";
-import { pageFile, readingFile, STRIP_LAYOUT, type Context, type Page, type PageStoryboard, type ReadingImages } from "../types.js";
+import { pngSize, sha256 } from "../image.js";
+import { pageFile, readingFile, STRIP_LAYOUT, type Context, type Page, type PageStoryboard, type ReadingImages, type UploadedImages } from "../types.js";
 
 function htmlEscape(text: string): string {
   return text.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
@@ -44,7 +44,42 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
     }
   }
   const readingReady = targetKb === null ? !previous || previous.target_kb === null : previous?.target_kb === targetKb && copies.size === rows.filter((row) => row.final_attempt_id).length;
-  if (!options.force && readingReady && chapter.status === "exported" && (!paths.pdf || await ctx.fs.readBytes(paths.pdf)) && (!paths.html || await ctx.fs.readText(paths.html))) return { chapter: chapter.id, ...paths, flagged, skipped: true };
+  const uploadKey = `export.upload.${chapter.id}`;
+  const uploadMarker = await ctx.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", [uploadKey]);
+  const savedUploads = uploadMarker ? JSON.parse(uploadMarker.value) as UploadedImages : undefined;
+  const imgbed = ctx.config.export.imgbed;
+  const uploads: UploadedImages = savedUploads?.base_url === imgbed.base_url && savedUploads.target_kb === targetKb ? savedUploads : { base_url: imgbed.base_url, target_kb: targetKb, pages: {} };
+  const imageUrls = () => Object.fromEntries(rows.filter((row) => row.final_attempt_id && uploads.pages[row.id]?.attempt_id === row.final_attempt_id).map((row) => [row.id, uploads.pages[row.id].url]));
+  const uploadReadingImage = async (row: Page, data: Uint8Array): Promise<boolean> => {
+    ctx.signal?.throwIfAborted();
+    const attemptId = row.final_attempt_id!;
+    const hash = await sha256(data);
+    const cached = uploads.pages[row.id];
+    let uploaded = false;
+    if (!cached || cached.attempt_id !== attemptId || cached.sha256 !== hash) {
+      if (!ctx.imageHost) throw new PreconditionError("An ImgBed uploader is required when export.imgbed.enabled is true");
+      const name = targetKb === null ? pageFile(row.page_no) : readingFile(row.page_no);
+      const url = await ctx.imageHost.upload(`${base}/${ctx.project.id}-${chapter.id}-${attemptId}-${hash}-${name}`, data, ctx.signal);
+      uploads.pages[row.id] = { attempt_id: attemptId, sha256: hash, url };
+      await ctx.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", [uploadKey, JSON.stringify(uploads)]);
+      ctx.log("info", `Uploaded reading image ${row.id}`);
+      uploaded = true;
+    }
+    ctx.signal?.throwIfAborted();
+    return uploaded;
+  };
+  if (!options.force && readingReady && chapter.status === "exported" && (!paths.pdf || await ctx.fs.readBytes(paths.pdf)) && (!paths.html || await ctx.fs.readText(paths.html))) {
+    let uploaded = false;
+    if (imgbed.enabled) {
+      for (const row of rows.filter((page) => page.final_attempt_id)) {
+        const path = targetKb === null ? `chapters/${chapter.id}/pages/${pageFile(row.page_no)}` : `${base}/${readingFile(row.page_no)}`;
+        const data = targetKb === null ? await ctx.fs.readBytes(path) : copies.get(row.id);
+        if (!data) throw new PreconditionError(`Final reading image is missing: ${path}`);
+        if (await uploadReadingImage(row, data)) uploaded = true;
+      }
+    }
+    return { chapter: chapter.id, ...paths, flagged, image_urls: imageUrls(), skipped: !uploaded };
+  }
   const isStrip = rows.every((row) => (JSON.parse(row.storyboard) as PageStoryboard).layout === STRIP_LAYOUT);
   const dimensions = ctx.config.image.size.split("x").map(Number);
   const fallbackSize = { width: dimensions[0], height: dimensions[1] };
@@ -78,6 +113,7 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
       if (!data) throw new PreconditionError(`Final page copy is missing: ${path}`);
       const size = pngSize(data);
       const readingData = targetKb === null ? data : copies.get(row.id) ?? await ctx.fs.writeReadingCopy(`${base}/${readingFile(row.page_no)}`, data, targetKb);
+      if (imgbed.enabled) await uploadReadingImage(row, readingData);
       if (targetKb !== null) reading.attempts[row.id] = row.final_attempt_id;
       if (targetKb !== null) reading.attempts[row.id] = row.final_attempt_id;
       if (pdf) {
@@ -111,5 +147,5 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
     { sql: "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params: [readingKey, JSON.stringify(reading)] },
   ]);
   ctx.log("info", `Exported chapter ${chapter.id}`, { ...paths, flagged });
-  return { chapter: chapter.id, ...paths, flagged, skipped: false };
+  return { chapter: chapter.id, ...paths, flagged, image_urls: imageUrls(), skipped: false };
 }

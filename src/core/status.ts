@@ -1,5 +1,5 @@
 import { getBible } from "./data.js";
-import { chapterId, readingFile, STRIP_LAYOUT, type Chapter, type Context, type Page, type Ref, type ReadingImages } from "./types.js";
+import { chapterId, readingFile, STRIP_LAYOUT, type Chapter, type Context, type Page, type Ref, type ReadingImages, type UploadedImages } from "./types.js";
 
 export async function getStatus(ctx: Context, chapterNumber?: number | string) {
   const filter = chapterNumber === undefined ? "" : "WHERE c.id = ?";
@@ -20,19 +20,25 @@ export async function getStatus(ctx: Context, chapterNumber?: number | string) {
   }
   const readingRows = await ctx.db.all<{ key: string; value: string }>("SELECT key, value FROM meta WHERE key LIKE 'export.reading.%'");
   const reading = new Map(readingRows.map((row) => [row.key.slice("export.reading.".length), JSON.parse(row.value) as ReadingImages]));
+  const uploadRows = await ctx.db.all<{ key: string; value: string }>("SELECT key, value FROM meta WHERE key LIKE 'export.upload.%'");
+  const uploads = new Map(uploadRows.map((row) => [row.key.slice("export.upload.".length), JSON.parse(row.value) as UploadedImages]));
   const pages = await Promise.all(rows.map(async (page) => {
     const exported = reading.get(page.chapter_id);
+    const hosted = uploads.get(page.chapter_id);
+    const hostedImage = hosted?.pages[page.id];
+    const hostedUrl = hosted?.base_url === ctx.config.export.imgbed.base_url && hosted.target_kb === ctx.config.export.reading_image_kb && hostedImage?.attempt_id === page.final_attempt_id ? hostedImage?.url ?? null : null;
     const readingPath = page.final_attempt_id && ctx.config.export.reading_image_kb !== null && exported?.target_kb === ctx.config.export.reading_image_kb && exported?.attempts[page.id] === page.final_attempt_id ? `chapters/${page.chapter_id}/export/${readingFile(page.page_no)}` : null;
     return {
       ...page, storyboard: JSON.parse(page.storyboard),
       format: JSON.parse(page.storyboard).layout === STRIP_LAYOUT ? "strip" as const : "page" as const,
       image_path: page.final_attempt_id ? `chapters/${page.chapter_id}/pages/p${String(page.page_no).padStart(2, "0")}.png` : null,
       reading_image_path: readingPath && await ctx.fs.exists(readingPath) ? readingPath : null,
+      hosted_image_url: hostedUrl,
       reviews: byPage.get(page.id) ?? [],
     };
   }));
   const refs = await ctx.db.all<Ref>("SELECT * FROM refs WHERE path IS NOT NULL ORDER BY kind, target_id, id");
   const reviewMeta = await ctx.db.all<{ key: string; value: string }>("SELECT * FROM meta WHERE key LIKE 'storyboard.review.%'");
   const warnings = reviewMeta.filter((row) => { const value = JSON.parse(row.value); return value.completed && !value.passed; }).map((row) => `Storyboard review warning for chapter ${row.key.split(".").at(-1)}`);
-  return { project: ctx.project, comic_format: ctx.config.storyboard.format, chapters: chapters.map(chapter => ({ ...chapter, title: cleanTitle(chapter.title) })), pages, refs, ...await getBible(ctx), warnings, flagged: pages.filter((page) => page.status === "flagged").map((page) => page.id), export_options: { pdf: ctx.config.export.pdf, html: ctx.config.export.html } };
+  return { project: ctx.project, comic_format: ctx.config.storyboard.format, chapters: chapters.map(chapter => ({ ...chapter, title: cleanTitle(chapter.title) })), pages, refs, ...await getBible(ctx), warnings, flagged: pages.filter((page) => page.status === "flagged").map((page) => page.id), export_options: { pdf: ctx.config.export.pdf, html: ctx.config.export.html, imgbed: ctx.config.export.imgbed } };
 }

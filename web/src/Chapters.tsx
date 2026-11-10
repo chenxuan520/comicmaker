@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowUpRight, BookOpen, ChevronLeft, ChevronRight, CircleAlert, FileDown, Layers3, Play, RotateCcw } from 'lucide-react';
 import { parseDocument } from 'yaml';
+import type { Config } from '../../schemas/index.js';
 import { fileUrl, problem, request, send } from './api';
 import { AssetImage, ComicPlaceholder, ErrorNotice, pretty, RunOptions, StatusBadge } from './components';
 import Schedule from './Schedule';
@@ -9,7 +10,7 @@ import type { ActionProps, ApiProblem, Chapter, ComicFormat, ComicPage, ConfigDo
 const formatNames: Record<ComicFormat, string> = { page: '页漫', strip: '手机条漫' };
 
 export default function Chapters({ project, selectedChapterId, onSelectChapter, onUpdated, busy, canGenerate, onAction }: ActionProps & {
-  project: ProjectDetail; selectedChapterId: string | null; onSelectChapter: (id: string) => void; onUpdated: () => void;
+  project: ProjectDetail; selectedChapterId: string | null; onSelectChapter: (id: string) => void; onUpdated: (imgbed?: Config['export']['imgbed']) => void;
 }) {
   const [pageId, setPageId] = useState<string | null>(null);
   const [flaggedOnly, setFlaggedOnly] = useState(false);
@@ -18,6 +19,10 @@ export default function Chapters({ project, selectedChapterId, onSelectChapter, 
   const [savingFormat, setSavingFormat] = useState(false);
   const [formatSaved, setFormatSaved] = useState(false);
   const [formatError, setFormatError] = useState<ApiProblem | null>(null);
+  const [imgBedEnabled, setImgBedEnabled] = useState(project.export_options.imgbed?.enabled ?? false);
+  const [savingImgBed, setSavingImgBed] = useState(false);
+  const [imgBedSaved, setImgBedSaved] = useState(false);
+  const [imgBedError, setImgBedError] = useState<ApiProblem | null>(null);
   const [force, setForce] = useState(false);
   const [ignoreLimit, setIgnoreLimit] = useState(false);
   const chapter = project.chapters.find((item) => item.id === selectedChapterId) ?? project.chapters[0];
@@ -27,6 +32,7 @@ export default function Chapters({ project, selectedChapterId, onSelectChapter, 
   const pageIndex = page ? visiblePages.indexOf(page) : -1;
 
   useEffect(() => { setFormat(project.comic_format); }, [project.comic_format]);
+  useEffect(() => { setImgBedEnabled(project.export_options.imgbed?.enabled ?? false); }, [project.export_options.imgbed?.enabled]);
 
   async function saveFormat(nextFormat: ComicFormat) {
     setSavingFormat(true); setFormatError(null); setFormatSaved(false);
@@ -41,6 +47,21 @@ export default function Chapters({ project, selectedChapterId, onSelectChapter, 
     finally { setSavingFormat(false); }
   }
 
+  async function saveImgBed(enabled: boolean) {
+    setSavingImgBed(true); setImgBedError(null); setImgBedSaved(false);
+    try {
+      const path = `/api/config?project=${encodeURIComponent(project.project.id)}`;
+      const current = await request<ConfigDocument>(path);
+      const document = parseDocument(current.yaml);
+      document.setIn(['export', 'imgbed', 'enabled'], enabled);
+      const saved = await send<ConfigDocument>(path, 'PUT', { yaml: document.toString() });
+      const imgbed = (saved.merged as Config).export.imgbed;
+      setImgBedEnabled(imgbed.enabled);
+      setImgBedSaved(true); onUpdated(imgbed);
+    } catch (cause) { setImgBedError(problem(cause)); }
+    finally { setSavingImgBed(false); }
+  }
+
   function selectChapter(item: Chapter) {
     onSelectChapter(item.id); setPageId(null); setFlaggedOnly(false);
   }
@@ -49,7 +70,7 @@ export default function Chapters({ project, selectedChapterId, onSelectChapter, 
     <div className="chapters-view">
       <div className="page-heading"><div><p className="eyebrow">章节稿台 / CHAPTER DESK</p><h1>一章一章，画下去。</h1><p>已完成的步骤会自动跳过。需要重来时，再明确开启强制执行。</p></div><span className="heading-mark"><BookOpen size={32} strokeWidth={1.2} aria-hidden="true" /></span></div>
       <section className="comic-format-panel paper-panel" aria-labelledby="comic-format-heading" aria-busy={savingFormat}>
-        <div className="section-heading"><div><p className="eyebrow">仅当前作品 / COMIC FORMAT</p><h2 id="comic-format-heading">新分镜格式</h2></div><div className="segmented" role="group" aria-labelledby="comic-format-heading" aria-describedby="comic-format-help"><button type="button" className={format === 'page' ? 'active' : ''} aria-pressed={format === 'page'} disabled={busy || savingFormat} onClick={() => void saveFormat('page')}>页漫</button><button type="button" className={format === 'strip' ? 'active' : ''} aria-pressed={format === 'strip'} disabled={busy || savingFormat} onClick={() => void saveFormat('strip')}>手机条漫</button></div></div>
+        <div className="section-heading"><div><p className="eyebrow">仅当前作品 / COMIC FORMAT</p><h2 id="comic-format-heading">新分镜格式</h2></div><div className="segmented" role="group" aria-labelledby="comic-format-heading" aria-describedby="comic-format-help"><button type="button" className={format === 'page' ? 'active' : ''} aria-pressed={format === 'page'} disabled={busy || savingFormat || savingImgBed} onClick={() => void saveFormat('page')}>页漫</button><button type="button" className={format === 'strip' ? 'active' : ''} aria-pressed={format === 'strip'} disabled={busy || savingFormat || savingImgBed} onClick={() => void saveFormat('strip')}>手机条漫</button></div></div>
         <p className="section-description" id="comic-format-help">手机条漫为单列四格：每组 4 个横向全宽画格，从上到下排列。</p>
         <p className="field-help">只保存本项目覆盖，不影响工作区其他作品；切换本身不计费，不会自动删除、重绘或启动任务。现有分镜与图片不会自动转为条漫。</p>
         <p className="field-help">旧章改成新格式需要明确强制改编：在「更多执行选项」勾选强制重新执行，再运行「改编与分镜」或「制作这一章」。重新改编与绘制会再次计费，历史原图保留。</p>
@@ -57,7 +78,16 @@ export default function Chapters({ project, selectedChapterId, onSelectChapter, 
         {formatSaved && <p className="save-confirmation" role="status">本项目格式已保存；没有启动生成任务。</p>}
         {formatError && <ErrorNotice error={formatError} />}
       </section>
-      <Schedule project={project} busy={busy || savingFormat} onUpdated={onUpdated} />
+      <section className="comic-format-panel paper-panel" aria-labelledby="imgbed-heading" aria-busy={savingImgBed}>
+        <div className="section-heading"><div><p className="eyebrow">仅当前作品 / IMAGE HOST</p><h2 id="imgbed-heading">可选图床上传</h2></div><label className="checkbox-label"><input type="checkbox" checked={imgBedEnabled} disabled={busy || savingFormat || savingImgBed || !project.export_options.imgbed} aria-describedby="imgbed-help" onChange={(event) => void saveImgBed(event.target.checked)} />导出时上传最终阅读图</label></div>
+        <p className="section-description" id="imgbed-help">默认关闭。这里只保存本项目开关，不上传图片；开启后随章节制作或导出上传，也适用于定时任务。</p>
+        <p className="field-help">只上传选定的最终阅读 JPEG（关闭阅读压缩时为最终 PNG），包括待复核图；不上传设定参考图或历史候选。本地阅读、HTML 和 PDF 继续用本地文件；关闭不会撤回已公开的图片。</p>
+        {project.export_options.imgbed ? <p className="field-help">图床：<code>{project.export_options.imgbed.base_url}</code>。密钥只放环境变量或工作区 <code>.env</code> 的 <code>IMG_BED_TOKEN</code>（需 upload 权限）或 <code>IMG_BED_AUTH_CODE</code>；不是 Cloudflare 管理 Token。上传失败后再次导出可续传。</p> : <p className="field-help" role="status">当前后端尚未支持图床上传，需要重启本地服务加载新版本。</p>}
+        {savingImgBed && <p className="field-help" role="status">正在保存本项目图床开关…</p>}
+        {imgBedSaved && <p className="save-confirmation" role="status">本项目图床开关已保存；未启动导出或上传。</p>}
+        {imgBedError && <ErrorNotice error={imgBedError} />}
+      </section>
+      <Schedule project={project} busy={busy || savingFormat || savingImgBed} onUpdated={onUpdated} />
       {!chapter ? <div className="empty-state"><BookOpen size={36} strokeWidth={1.2} aria-hidden="true" /><h2>故事目录还是空的。</h2><p>先到创作工作台导入小说，切分好的章节会出现在这里。</p></div> : <div className="chapter-workspace">
         <aside className="chapter-directory" aria-label="小说章节"><div className="directory-heading"><span>原稿目录</span><span>{project.chapters.length} 章</span></div><div className="chapter-directory-list">
           {project.chapters.map((item) => <button type="button" className={`directory-item ${chapter.id === item.id ? 'active' : ''}`} aria-current={chapter.id === item.id ? 'true' : undefined} onClick={() => selectChapter(item)} key={item.id}>
@@ -68,13 +98,13 @@ export default function Chapters({ project, selectedChapterId, onSelectChapter, 
           <section className="chapter-production paper-panel">
             <div className="chapter-title-row"><div><p className="eyebrow">CHAPTER {String(chapter.idx).padStart(2, '0')}</p><h2>{chapter.title || `第 ${chapter.idx} 章`}</h2></div><StatusBadge status={chapter.status} /></div>
             {chapter.summary && <details className="chapter-summary"><summary>本章摘要</summary><p>{chapter.summary}</p></details>}
-            <div className="chapter-run-row"><button className="button button-primary" disabled={busy || savingFormat || !canGenerate('run')} onClick={() => onAction({ action: 'run', chapter: chapter.idx, force, ignore_limit: ignoreLimit })}><Play size={16} aria-hidden="true" />制作这一章</button><p>改编 → 生图与审查 → 导出<br /><span>缺少锁定设定或预算不足时，服务端会停止并列出原因。</span></p></div>
+            <div className="chapter-run-row"><button className="button button-primary" disabled={busy || savingFormat || savingImgBed || !canGenerate('run')} onClick={() => onAction({ action: 'run', chapter: chapter.idx, force, ignore_limit: ignoreLimit })}><Play size={16} aria-hidden="true" />制作这一章</button><p>改编 → 生图与审查 → 导出<br /><span>缺少锁定设定或预算不足时，服务端会停止并列出原因。</span></p></div>
             <div className="step-actions" aria-label="单独执行章节步骤">
-              <button className="button button-small button-quiet" disabled={busy || savingFormat || !canGenerate('adapt')} onClick={() => onAction({ action: 'adapt', chapter: chapter.idx, force, ignore_limit: ignoreLimit })}><Layers3 size={15} aria-hidden="true" />改编与分镜</button>
-              <button className="button button-small button-quiet" disabled={busy || savingFormat || !canGenerate('render') || !pages.length} onClick={() => onAction({ action: 'render', chapter: chapter.idx, force, ignore_limit: ignoreLimit })}><BookOpen size={15} aria-hidden="true" />绘制画页</button>
-              <button className="button button-small button-quiet" disabled={busy || savingFormat || !pages.length} onClick={() => onAction({ action: 'export', chapter: chapter.idx, force })}><FileDown size={15} aria-hidden="true" />导出章节</button>
+              <button className="button button-small button-quiet" disabled={busy || savingFormat || savingImgBed || !canGenerate('adapt')} onClick={() => onAction({ action: 'adapt', chapter: chapter.idx, force, ignore_limit: ignoreLimit })}><Layers3 size={15} aria-hidden="true" />改编与分镜</button>
+              <button className="button button-small button-quiet" disabled={busy || savingFormat || savingImgBed || !canGenerate('render') || !pages.length} onClick={() => onAction({ action: 'render', chapter: chapter.idx, force, ignore_limit: ignoreLimit })}><BookOpen size={15} aria-hidden="true" />绘制画页</button>
+              <button className="button button-small button-quiet" disabled={busy || savingFormat || savingImgBed || !pages.length} onClick={() => onAction({ action: 'export', chapter: chapter.idx, force })}><FileDown size={15} aria-hidden="true" />导出章节</button>
             </div>
-            <RunOptions force={force} ignoreLimit={ignoreLimit} onForce={setForce} onIgnoreLimit={setIgnoreLimit} disabled={busy || savingFormat} />
+            <RunOptions force={force} ignoreLimit={ignoreLimit} onForce={setForce} onIgnoreLimit={setIgnoreLimit} disabled={busy || savingFormat || savingImgBed} />
             {chapter.status === 'exported' && <div className="export-links"><span><CheckMark />本章导出已完成</span>{project.export_options.html && <a href={fileUrl(project.project.id, `chapters/${chapter.id}/export/index.html`)} target="_blank" rel="noreferrer">打开阅读页<ArrowUpRight size={14} aria-hidden="true" /></a>}{project.export_options.pdf && <a href={fileUrl(project.project.id, `chapters/${chapter.id}/export/chapter.pdf`)} download>下载 PDF<FileDown size={14} aria-hidden="true" /></a>}{!project.export_options.html && !project.export_options.pdf && <span>未启用 PDF 或 HTML 输出</span>}</div>}
           </section>
           <section className="page-browser" aria-label="漫画画页与条漫组">
@@ -95,7 +125,8 @@ export default function Chapters({ project, selectedChapterId, onSelectChapter, 
                   <p className="eyebrow">{page.format === 'strip' ? '条漫组记录' : '画页记录'}</p><h3>{pageLabel(page)}</h3><code className="page-id">{page.id}</code>
                   {page.status === 'flagged' && <div className="page-flag-warning"><CircleAlert size={17} aria-hidden="true" /><p>{pageLabel(page)}未通过全部审查。导出不会自动隐藏它，请先阅读审查记录。</p></div>}
                   {continuous && page.image_url && <a className="text-link" href={page.original_image_url!} target="_blank" rel="noreferrer">打开选定原图<ArrowUpRight size={14} aria-hidden="true" /></a>}
-                  <button className="button button-small button-ink redo-button" disabled={busy || savingFormat || !canGenerate('redo')} onClick={() => onAction({ action: 'redo', page_id: page.id })}><RotateCcw size={14} aria-hidden="true" />{page.format === 'strip' ? '重绘这一组' : '重绘这一页'}</button>
+                  {page.hosted_image_url && <a className="text-link" href={page.hosted_image_url} target="_blank" rel="noreferrer" aria-label={`在图床打开${pageLabel(page)}阅读图`}>打开图床阅读图<ArrowUpRight size={14} aria-hidden="true" /></a>}
+                  <button className="button button-small button-ink redo-button" disabled={busy || savingFormat || savingImgBed || !canGenerate('redo')} onClick={() => onAction({ action: 'redo', page_id: page.id })}><RotateCcw size={14} aria-hidden="true" />{page.format === 'strip' ? '重绘这一组' : '重绘这一页'}</button>
                   <p className="field-help">重绘会再次计费。历史原图保留，当前选定图可能被新结果替换。</p>
                   <details className="inspector-detail"><summary>分镜原文</summary><pre>{pretty(page.storyboard)}</pre></details>
                   <div className="review-records"><h4>审查记录 <span>{page.reviews?.length ?? 0}</span></h4>{page.reviews?.length ? page.reviews.map((review, index) => <details className="inspector-detail" key={index}><summary>审查 {index + 1}{review.attempt_id === page.final_attempt_id ? ' · 当前选定' : ''}</summary><pre>{pretty(review)}</pre></details>) : <p className="field-help">服务端尚未提供审查记录。</p>}</div>

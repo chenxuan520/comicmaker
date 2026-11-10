@@ -47,7 +47,7 @@ export async function initializeWorkspace(repository: string, workspace: string)
   await mkdir(join(workspace, "prompts"), { recursive: true });
   try { await copyFile(join(repository, "config.default.yaml"), join(workspace, "config.yaml"), constants.COPYFILE_EXCL); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
-  try { await writeFile(join(workspace, ".env"), "OPENAI_API_KEY=\nDEEPSEEK_API_KEY=\nARK_API_KEY=\nDASHSCOPE_API_KEY=\n", { flag: "wx", mode: 0o600 }); }
+  try { await writeFile(join(workspace, ".env"), "OPENAI_API_KEY=\nDEEPSEEK_API_KEY=\nARK_API_KEY=\nDASHSCOPE_API_KEY=\nIMG_BED_TOKEN=\nIMG_BED_AUTH_CODE=\n", { flag: "wx", mode: 0o600 }); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
 }
 

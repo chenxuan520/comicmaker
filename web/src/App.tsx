@@ -142,7 +142,10 @@ export default function App() {
   else if (view === 'projects') content = workspace ? <Projects workspace={workspace} selectedId={selectedId} onSelect={selectProject} onNew={() => setNewProjectOpen(true)} /> : !workspaceError && <Loading />;
   else if (selectedId && !project) content = projectError ? <div className="empty-state"><FolderOpen size={35} strokeWidth={1.2} aria-hidden="true" /><h1>这部作品暂时无法读取。</h1><p>上次选择仍然保留。请检查本地服务后重试。</p><button className="button button-ink" onClick={refreshData}><RefreshCw size={16} aria-hidden="true" />重新读取作品</button></div> : <Loading>正在打开「{selectedTitle ?? selectedId}」</Loading>;
   else if (view === 'refs' && project) content = <References key={selectedId} project={project} {...actions} />;
-  else if (view === 'chapters' && project) content = <Chapters key={selectedId} project={project} selectedChapterId={chapterId} onSelectChapter={setChapterId} onUpdated={refreshData} {...actions} />;
+  else if (view === 'chapters' && project) content = <Chapters key={selectedId} project={project} selectedChapterId={chapterId} onSelectChapter={setChapterId} onUpdated={(imgbed) => {
+    if (imgbed) setProjectData((current) => current?.project.id === selectedId ? { ...current, export_options: { ...current.export_options, imgbed } } : current);
+    refreshData();
+  }} {...actions} />;
   else if (view === 'prompts' && project) content = <PromptEditor key={selectedId} projectId={project.project.id} projectTitle={project.project.title} />;
   else if (view !== 'studio') content = <div className="empty-state"><LibraryBig size={36} strokeWidth={1.2} aria-hidden="true" /><h1>先为故事建一个项目。</h1><p>选择或新建一部作品，才能使用{viewNames[view]}。</p><button className="button button-primary" disabled={!workspace} onClick={() => setNewProjectOpen(true)}><Plus size={16} aria-hidden="true" />新建作品</button></div>;
   else content = <Studio key={selectedId ?? 'empty'} workspace={workspace} project={project} onNew={() => setNewProjectOpen(true)} onView={navigate} onChapter={(id) => { setChapterId(id); navigate('chapters'); }} onImported={(count) => { setNotice(`原稿已导入，服务端切分出 ${count} 章。`); refreshData(); }} {...actions} />;

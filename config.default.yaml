@@ -98,6 +98,9 @@ export:
   pdf: true
   html: true
   reading_image_kb: 200
+  imgbed:
+    enabled: false
+    base_url: https://img.011203.xyz
   ai_notice_page: true
   ai_notice_text: "本作品由 AI 生成"
   font_path: null
