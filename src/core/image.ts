@@ -2,7 +2,7 @@ import { ulid } from "ulid";
 import { priceUsage } from "./budget.js";
 import { ImageResponseError, ResponseDecodeError } from "./ai.js";
 import { errorInfo } from "./errors.js";
-import { isRefusal, isTimeout, isTransient, retryApi } from "./calls.js";
+import { isConnectionError, isRefusal, isTimeout, isTransient, retryApi } from "./calls.js";
 import type { ImageInput } from "./ports.js";
 import type { RenderedPrompt } from "./prompts.js";
 import type { Attempt, Context } from "./types.js";
@@ -77,7 +77,7 @@ export async function generateImage(ctx: Context, options: {
     return (await ctx.db.get<Attempt>("SELECT * FROM attempts WHERE id = ?", [id]))!;
   } catch (error) {
     const refusal = isRefusal(error);
-    const estimated = invoked && (isTimeout(error) || Boolean(ctx.signal?.aborted) || error instanceof ResponseDecodeError);
+    const estimated = invoked && (isTimeout(error) || isConnectionError(error) || Boolean(ctx.signal?.aborted) || error instanceof ResponseDecodeError);
     if (!charged) {
       if (error instanceof ImageResponseError) {
         const price = priceUsage(ctx.config.pricing, ctx.config.image.model, error.usage, estimate, true, ctx.log);
@@ -89,7 +89,7 @@ export async function generateImage(ctx: Context, options: {
         await ctx.budget.settle(spendId, cost, undefined, true);
       }
     }
-    const kind = !invoked ? "cancelled" : refusal ? "refused" : estimated ? "timeout" : isTransient(error) ? "network" : "error";
+    const kind = !invoked ? "cancelled" : refusal ? "refused" : isConnectionError(error) && !isTimeout(error) ? "network" : estimated ? "timeout" : isTransient(error) ? "network" : "error";
     await ctx.db.run("UPDATE attempts SET status = ?, cost_usd = ?, error = ? WHERE id = ?", [refusal ? "refused" : "error", cost, JSON.stringify({ kind, message: errorInfo(error).message }), id]);
     throw error;
   }

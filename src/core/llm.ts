@@ -2,7 +2,7 @@ import { ulid } from "ulid";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { ZodError, type ZodType } from "zod";
 import { priceUsage } from "./budget.js";
-import { isTimeout, retryApi } from "./calls.js";
+import { isConnectionError, isTimeout, retryApi } from "./calls.js";
 import { errorInfo } from "./errors.js";
 import { ResponseDecodeError } from "./ai.js";
 import type { ImageInput } from "./ports.js";
@@ -55,7 +55,7 @@ export async function structuredCall<T>(ctx: Context, options: {
       return result;
     } catch (error) {
       const message = errorInfo(error).message;
-      if (!charged) await ctx.budget.settle(spendId, invoked && (isTimeout(error) || ctx.signal?.aborted || error instanceof ResponseDecodeError) ? estimate : 0, undefined, true);
+      if (!charged) await ctx.budget.settle(spendId, invoked && (isTimeout(error) || isConnectionError(error) || ctx.signal?.aborted || error instanceof ResponseDecodeError) ? estimate : 0, undefined, true);
       await ctx.db.run("UPDATE llm_calls SET status = 'error', output = ?, error = ? WHERE id = ?", [raw ?? null, message, id]);
       await ctx.fs.writeJson(`logs/llm-${id}.json`, { id, step: options.step, model: options.model, ...prompt, output: raw, error: message });
       if (charged && (error instanceof SyntaxError || error instanceof ZodError) && retry < ctx.config.llm.schema_retry && !ctx.signal?.aborted) {

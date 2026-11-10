@@ -2,6 +2,7 @@ import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { APIConnectionError } from "openai";
 import { OpenAiProvider, encodeBase64 } from "../src/core/ai.js";
 import { summarySchema } from "../schemas/index.js";
 import { structuredCall } from "../src/core/llm.js";
@@ -250,6 +251,33 @@ for (const step of ["image", "llm"] as const) {
         else await assert.rejects(structuredCall(handle.ctx, { step: "prepare", template: "summary", model: handle.ctx.config.models.extract, schema: summarySchema, data: { chapters: [] } }), /Cancelled before invocation/);
         assert.equal(ai.imageCalls.length + ai.structuredCalls.length, 0);
         assert.equal((await f.workspace.ledger.get<{ cost_usd: number }>("SELECT cost_usd FROM spend"))!.cost_usd, 0);
+      } finally { await handle.close(); }
+    } finally { await f.close(); }
+  });
+}
+
+for (const step of ["image", "llm"] as const) {
+  test(`${step} connection resets retain the unknown-fee estimate without retrying`, async () => {
+    const ai = new MockAi();
+    const disconnected = () => { throw new APIConnectionError({ cause: new Error("read ECONNRESET") }); };
+    ai.onImage = disconnected;
+    ai.onStructured = disconnected;
+    const f = await fixture(ai);
+    try {
+      await createProject(f.workspace.store, "book", "Book");
+      const handle = await f.workspace.context("book");
+      try {
+        if (step === "image") await assert.rejects(generateImage(handle.ctx, imageOptions), APIConnectionError);
+        else await assert.rejects(structuredCall(handle.ctx, { step: "prepare", template: "summary", model: handle.ctx.config.models.extract, schema: summarySchema, data: { chapters: [] } }), APIConnectionError);
+        const spend = (await f.workspace.ledger.get<{ cost_usd: number; estimated: number }>("SELECT * FROM spend"))!;
+        assert.equal(spend.cost_usd, step === "image" ? handle.ctx.config.budget.estimates.image : handle.ctx.config.budget.estimates.llm);
+        assert.equal(spend.estimated, 1);
+        assert.equal(ai.imageCalls.length + ai.structuredCalls.length, 1);
+        if (step === "image") {
+          const attempt = (await handle.ctx.db.get<{ cost_usd: number; error: string }>("SELECT * FROM attempts"))!;
+          assert.equal(attempt.cost_usd, spend.cost_usd);
+          assert.equal(JSON.parse(attempt.error).kind, "network");
+        }
       } finally { await handle.close(); }
     } finally { await f.close(); }
   });

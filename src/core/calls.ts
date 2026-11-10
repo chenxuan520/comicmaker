@@ -1,3 +1,4 @@
+import { APIConnectionError } from "openai";
 import type { Log } from "./ports.js";
 
 export function apiStatus(error: unknown): number | undefined {
@@ -12,6 +13,10 @@ export function isTransient(error: unknown): boolean {
 export function isTimeout(error: unknown): boolean {
   const detail = error as { name?: string; message?: string; code?: string };
   return /timeout|timed.?out|ETIMEDOUT/i.test(`${detail?.name} ${detail?.message} ${detail?.code}`);
+}
+
+export function isConnectionError(error: unknown): boolean {
+  return error instanceof APIConnectionError;
 }
 
 export function isRefusal(error: unknown): boolean {
