@@ -256,6 +256,25 @@ export const visualReviewSchema = z
   })
   .strict();
 
+export const scheduleInputSchema = z.union([
+  z.object({ mode: z.literal("off") }).strict(),
+  z.object({ mode: z.literal("once"), run_at: z.string().datetime({ offset: true }), timezone: z.string().min(1), confirm_cost: z.literal(true) }).strict(),
+  z.object({ mode: z.literal("daily"), time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/), timezone: z.string().min(1), confirm_cost: z.literal(true) }).strict(),
+]);
+
+export type ScheduleInput = z.infer<typeof scheduleInputSchema>;
+export type ChapterSchedule = {
+  id: string;
+  status: "scheduled" | "running" | "paused" | "completed" | "disabled";
+  next_run_at: string | null;
+  last_job_id: string | null;
+  last_chapter: number | null;
+  message: string | null;
+} & (
+  { mode: "once"; run_at: string; timezone: string } |
+  { mode: "daily"; time: string; timezone: string }
+);
+
 export const configSchema = z
   .object({
     openai: z

@@ -140,6 +140,7 @@ const mutations = [
   { name: "project creation", build: () => ({ method: "POST", path: "/api/projects", body: JSON.stringify({ id: "created", title: "Created" }), status: 201 }) },
   { name: "workspace config", build: () => ({ method: "PUT", path: "/api/config", body: JSON.stringify({ yaml: "web:\n  max_upload_mb: 8\n" }), status: 200 }) },
   { name: "project config", build: () => ({ method: "PUT", path: `/api/config?project=${project}`, body: JSON.stringify({ yaml: `id: ${project}\ntitle: Updated\n` }), status: 200 }) },
+  { name: "chapter schedule", build: () => ({ method: "PUT", path: `/api/projects/${project}/schedule`, body: JSON.stringify({ mode: "daily", time: "23:00", timezone: "Asia/Shanghai", confirm_cost: true }), status: 200 }) },
   { name: "project prompt", build: async (server: Studio) => {
     const store = new LocalTemplateStore(server.workspace.repository, server.root, project);
     const template = (await store.list())[0]!;

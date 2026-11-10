@@ -1,3 +1,7 @@
+import type { ChapterSchedule } from '../../schemas/index.js';
+
+export type { ChapterSchedule, ScheduleInput } from '../../schemas/index.js';
+
 export type View = 'studio' | 'projects' | 'refs' | 'chapters' | 'budget' | 'config' | 'prompts';
 export type RefKind = 'style' | 'outfit' | 'location';
 export type ComicFormat = 'page' | 'strip';
@@ -20,6 +24,8 @@ export interface Job {
   id: string;
   project_id: string;
   action: string;
+  source?: 'schedule';
+  chapter?: number;
   status: 'running' | 'completed' | 'failed' | 'cancelled';
   started_at: string;
   finished_at?: string;
@@ -91,6 +97,7 @@ export interface Entity {
 export interface ProjectDetail {
   project: { id: string; title: string; style_desc: string };
   comic_format: ComicFormat;
+  schedule?: ChapterSchedule | null;
   api_keys?: { text: boolean; vision: boolean; image: boolean };
   review_required?: boolean;
   chapters: Chapter[];

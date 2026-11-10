@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import { ulid } from "ulid";
 import { z } from "zod";
-import { configSchema, type Config } from "../../schemas/index.js";
+import { configSchema, scheduleInputSchema, type ChapterSchedule, type Config } from "../../schemas/index.js";
 import { budgetReport } from "../core/budget.js";
 import { ComicError, errorInfo, PreconditionError } from "../core/errors.js";
 import { createProject, importNovel } from "../core/project.js";
@@ -18,6 +18,7 @@ import { aiKeys } from "./ai.js";
 import { apiKey, loadConfig, mergeConfig, parseConfigYaml, validateConfig } from "./config.js";
 import { exportFont, WorkspaceRuntime } from "./runtime.js";
 import { LocalTemplateStore } from "./templates.js";
+import { ChapterScheduler, readChapterSchedule } from "./scheduler.js";
 
 const actionSchema = z.object({
   action: z.enum(["prepare", "refs", "lock", "adapt", "render", "run", "export", "redo"]),
@@ -33,6 +34,8 @@ export interface Job {
   status: "running" | "completed" | "failed" | "cancelled";
   started_at: string;
   finished_at?: string;
+  source?: "schedule";
+  chapter?: number;
   result?: unknown;
   error?: ReturnType<typeof errorInfo>;
   events: { time: string; level: string; message: string; details?: unknown }[];
@@ -80,9 +83,9 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
     if (mutationBusy) throw new PreconditionError("Another workspace mutation is running; wait until it finishes");
   };
   const requireField = <T>(value: T | undefined, name: string): T => { if (value === undefined || value === "") throw new PreconditionError(`${name} is required`); return value; };
-  const startJob = (projectId: string, action: Action): Job => {
+  const startJob = (projectId: string, action: Action, scheduled?: ChapterSchedule): Job => {
     idle();
-    const active: Job = { id: ulid(), project_id: projectId, action: action.action, status: "running", started_at: new Date().toISOString(), events: [] };
+    const active: Job = { id: ulid(), project_id: projectId, action: action.action, status: "running", started_at: new Date().toISOString(), events: [], ...(scheduled ? { source: "schedule" as const } : {}) };
     job = active;
     jobController = new AbortController();
     const signal = jobController.signal;
@@ -92,6 +95,12 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
       try {
         handle = await workspace.context(projectId, { ignoreLimit: action.ignore_limit, signal, log: (level, message, details) => active.events.push({ time: new Date().toISOString(), level, message, details }) });
         const ctx = handle.ctx;
+        if (scheduled) {
+          const chapter = await scheduler.claim(projectId, ctx.db, scheduled, active.id);
+          if (chapter === null) { active.result = { skipped: true, reason: "All chapters are complete" }; status = "completed"; return; }
+          active.chapter = chapter;
+          action = { action: "run", chapter };
+        }
         switch (action.action) {
           case "prepare": active.result = await prepareBook(ctx, { force: action.force }); break;
           case "refs": active.result = await generateRefs(ctx, { kind: requireField(action.kind, "kind"), target: action.target, force: action.force }); break;
@@ -109,12 +118,18 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
       } finally {
         try { await handle?.close(); if (signal.aborted) status = "cancelled"; }
         catch (error) { active.error = errorInfo(error); status = "failed"; }
+        if (scheduled) {
+          try { await scheduler.finish(projectId, scheduled.id, { status, error: active.error }, signal); if (signal.aborted && status === "completed") status = "cancelled"; }
+          catch (error) { scheduler.forget(projectId); active.error = errorInfo(error); status = "failed"; }
+        }
         active.status = status;
         active.finished_at = new Date().toISOString();
       }
     })();
     return active;
   };
+  const scheduler = new ChapterScheduler(workspace, (id, schedule) => { startJob(id, { action: "run" }, schedule); }, () => shuttingDown || mutationBusy || job?.status === "running");
+  await scheduler.restore();
   const server = createServer(async (request, response) => {
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'");
@@ -190,15 +205,23 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
       if (parts[0] === "api" && parts[1] === "projects" && parts[2]) {
         const id = parts[2];
         if (parts[3] === "actions" && request.method === "POST") { replyJson(202, { job: startJob(id, actionSchema.parse(await jsonBody())) }); return; }
+        if (parts[3] === "schedule" && parts.length === 4) {
+          if (request.method === "GET") replyJson(200, { schedule: await scheduler.get(id) });
+          else if (request.method === "PUT") replyJson(200, { schedule: await scheduler.set(id, scheduleInputSchema.parse(await jsonBody())) });
+          else throw new PreconditionError("Unsupported method");
+          return;
+        }
         const handle = await workspace.context(id);
         try {
           if (parts.length === 3 && request.method === "GET") {
             const status = await getStatus(handle.ctx);
             const fileUrl = (path: string) => `/api/projects/${encodeURIComponent(id)}/files/${path.split("/").map(encodeURIComponent).join("/")}`;
-            replyJson(200, { ...status, ...await modelReadiness(workspace.root, handle.ctx.config), pages: status.pages.map((page) => ({ ...page, image_url: page.image_path ? `${fileUrl(page.reading_image_path ?? page.image_path)}?attempt=${page.final_attempt_id}${page.reading_image_path ? `&kb=${handle.ctx.config.export.reading_image_kb}` : ""}` : null, original_image_url: page.image_path ? `${fileUrl(page.image_path)}?attempt=${page.final_attempt_id}` : null })), refs: status.refs.map((ref) => ({ ...ref, image_url: fileUrl(ref.path!) })) }); return;
+            replyJson(200, { ...status, schedule: await readChapterSchedule(handle.ctx.db), ...await modelReadiness(workspace.root, handle.ctx.config), pages: status.pages.map((page) => ({ ...page, image_url: page.image_path ? `${fileUrl(page.reading_image_path ?? page.image_path)}?attempt=${page.final_attempt_id}${page.reading_image_path ? `&kb=${handle.ctx.config.export.reading_image_kb}` : ""}` : null, original_image_url: page.image_path ? `${fileUrl(page.image_path)}?attempt=${page.final_attempt_id}` : null })), refs: status.refs.map((ref) => ({ ...ref, image_url: fileUrl(ref.path!) })) }); return;
           }
           if (parts[3] === "import" && request.method === "POST") {
-            replyJson(200, await importNovel(handle.ctx, await body(request, limit), { force: url.searchParams.get("force") === "true" })); return;
+            const imported = await importNovel(handle.ctx, await body(request, limit), { force: url.searchParams.get("force") === "true" });
+            scheduler.forget(id);
+            replyJson(200, imported); return;
           }
           if (parts[3] === "prompts") {
             const store = new LocalTemplateStore(workspace.repository, workspace.root, id);
@@ -250,10 +273,12 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
     }
   });
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(options.port, options.host, () => { server.removeListener("error", reject); resolve(); }); });
+  scheduler.start();
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : options.port;
   return { server, url: `http://${options.host === "::1" ? "[::1]" : options.host}:${port}`, close: async () => {
     shuttingDown = true;
+    scheduler.stop();
     const closed = new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     jobController?.abort(new Error("Server is shutting down; progress saved"));
     mutationRequest?.destroy();

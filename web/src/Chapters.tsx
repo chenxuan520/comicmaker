@@ -3,6 +3,7 @@ import { ArrowUpRight, BookOpen, ChevronLeft, ChevronRight, CircleAlert, FileDow
 import { parseDocument } from 'yaml';
 import { fileUrl, problem, request, send } from './api';
 import { AssetImage, ComicPlaceholder, ErrorNotice, pretty, RunOptions, StatusBadge } from './components';
+import Schedule from './Schedule';
 import type { ActionProps, ApiProblem, Chapter, ComicFormat, ComicPage, ConfigDocument, ProjectDetail } from './types';
 
 const formatNames: Record<ComicFormat, string> = { page: '页漫', strip: '手机条漫' };
@@ -56,6 +57,7 @@ export default function Chapters({ project, selectedChapterId, onSelectChapter, 
         {formatSaved && <p className="save-confirmation" role="status">本项目格式已保存；没有启动生成任务。</p>}
         {formatError && <ErrorNotice error={formatError} />}
       </section>
+      <Schedule project={project} busy={busy || savingFormat} onUpdated={onUpdated} />
       {!chapter ? <div className="empty-state"><BookOpen size={36} strokeWidth={1.2} aria-hidden="true" /><h2>故事目录还是空的。</h2><p>先到创作工作台导入小说，切分好的章节会出现在这里。</p></div> : <div className="chapter-workspace">
         <aside className="chapter-directory" aria-label="小说章节"><div className="directory-heading"><span>原稿目录</span><span>{project.chapters.length} 章</span></div><div className="chapter-directory-list">
           {project.chapters.map((item) => <button type="button" className={`directory-item ${chapter.id === item.id ? 'active' : ''}`} aria-current={chapter.id === item.id ? 'true' : undefined} onClick={() => selectChapter(item)} key={item.id}>
