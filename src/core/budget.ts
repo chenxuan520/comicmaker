@@ -118,7 +118,7 @@ export class Budget {
 }
 
 export function priceUsage(
-  pricing: Record<string, { input?: number; output?: number; text_in?: number; image_in?: number; image_out?: number; per_image?: number }>,
+  pricing: Record<string, { input?: number; output?: number; text_in?: number; image_in?: number; image_out?: number; per_image?: number; per_input_image?: number; free_input_images?: number }>,
   model: string,
   usage: TokenUsage | undefined,
   estimate: number,
@@ -128,8 +128,9 @@ export function priceUsage(
   const price = pricing[model];
   if (image && price?.per_image !== undefined) {
     const count = usage?.image_count;
-    const cost = count === undefined ? NaN : count * price.per_image;
-    if (count !== undefined && Number.isInteger(count) && count >= 0 && Number.isFinite(cost)) return { cost, estimated: false };
+    const inputCount = price.per_input_image === undefined ? 0 : usage?.input_image_count;
+    const cost = count === undefined || inputCount === undefined ? NaN : count * price.per_image + Math.max(0, inputCount - (price.free_input_images ?? 0)) * (price.per_input_image ?? 0);
+    if (count !== undefined && Number.isInteger(count) && count >= 0 && inputCount !== undefined && Number.isInteger(inputCount) && inputCount >= 0 && Number.isFinite(cost)) return { cost, estimated: false };
     log("warning", `Missing image count or pricing for ${model}; recording estimate $${estimate}`);
     return { cost: estimate, estimated: true };
   }

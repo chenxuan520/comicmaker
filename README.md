@@ -350,7 +350,9 @@ pricing:
   qwen-image-2.0: { per_image: 0.04 }
 ```
 
-缺少单价或成功图片数时仍保留 `budget.estimates.image`，不把兼容字段中的 0 token 当作免费。已生成但下载或解码失败的图片保留费用，不因下载失败自动重发收费生成请求。接口参考：[DeepSeek JSON](https://api-docs.deepseek.com/guides/json_mode)、[DeepSeek 视觉](https://api-docs.deepseek.com/guides/vision)、[Seedream](https://www.volcengine.com/docs/82379/1541523)、[千问生图](https://help.aliyun.com/zh/model-studio/qwen-image-api)、[千问参考图](https://help.aliyun.com/zh/model-studio/qwen-image-edit-api)。
+Qwen-Image 3.0 系列同样使用 `image.provider: qwen`，通过 `image.model: qwen-image-3.0` 或 `qwen-image-3.0-pro` 选择；最多输入 3 张参考图（含画风），按官方默认开启提示词增强，2.x 保持原有行为。支持响应中的 `output_image_count` / `input_image_count`，参考图另收费的模型在 `pricing.<模型>` 设置 `per_input_image`（美元 / 张），与输出的 `per_image` 累加；Seedream Pro 首张输入免费时再设置 `free_input_images: 1`。输出单价须与选择的模型、尺寸档位相符，不自动查询或切换价格。
+
+缺少单价或所需图片计数时仍保留 `budget.estimates.image`，不把兼容字段中的 0 token 当作免费。已生成但下载或解码失败的图片保留费用，不因下载失败自动重发收费生成请求。接口参考：[DeepSeek JSON](https://api-docs.deepseek.com/guides/json_mode)、[DeepSeek 视觉](https://api-docs.deepseek.com/guides/vision)、[Seedream](https://www.volcengine.com/docs/82379/1541523)、[千问生图](https://help.aliyun.com/zh/model-studio/qwen-image-api)、[千问参考图](https://help.aliyun.com/zh/model-studio/qwen-image-edit-api)。
 
 颜色字段未知时保留 `null`，已知时用中文颜色词加 hex，如 `墨黑 #1A1A1A`，不补写原文未给出的颜色；模板省略空字段。摘要 Structured Outputs 使用对象根 `{"chapters":[{"chapter":1,"summary":"…"}]}`，不是裸数组。
 

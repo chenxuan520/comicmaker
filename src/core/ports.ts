@@ -64,6 +64,7 @@ export interface TokenUsage {
   text_input_tokens?: number;
   image_input_tokens?: number;
   image_count?: number;
+  input_image_count?: number;
 }
 
 export interface ImageInput { data: Uint8Array; name: string; label: string }

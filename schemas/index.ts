@@ -303,6 +303,8 @@ export const configSchema = z
           image_in: nonnegativeNumber.optional(),
           image_out: nonnegativeNumber.optional(),
           per_image: nonnegativeNumber.optional(),
+          per_input_image: nonnegativeNumber.optional(),
+          free_input_images: nonnegativeInteger.optional(),
         })
         .passthrough(),
     ),

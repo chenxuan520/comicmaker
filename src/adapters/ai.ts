@@ -46,13 +46,13 @@ interface ProviderFailure { code?: string; message?: string }
 interface SeedreamResponse {
   data?: { b64_json?: string; url?: string; error?: ProviderFailure }[];
   error?: ProviderFailure;
-  usage?: { generated_images?: number; output_tokens?: number };
+  usage?: { generated_images?: number; input_images?: number; output_tokens?: number };
 }
 interface QwenResponse {
   output?: { choices?: { message?: { content?: { image?: string }[] } }[] };
   code?: string;
   message?: string;
-  usage?: { image_count?: number };
+  usage?: { image_count?: number; input_image_count?: number; output_image_count?: number };
 }
 
 class NativeImageProvider extends OpenAiProvider {
@@ -77,16 +77,16 @@ class NativeImageProvider extends OpenAiProvider {
       encoded = response.data?.[0]?.b64_json;
       url = response.data?.[0]?.url;
       failure = response.error ?? response.data?.[0]?.error;
-      usage = response.usage ? { input_tokens: 0, output_tokens: response.usage.output_tokens ?? 0, image_count: response.usage.generated_images } : undefined;
+      usage = response.usage ? { input_tokens: 0, output_tokens: response.usage.output_tokens ?? 0, image_count: response.usage.generated_images, input_image_count: response.usage.input_images } : undefined;
     } else {
       const response = await this.response<QwenResponse>(this.client.post("/services/aigc/multimodal-generation/generation", {
         ...options, body: {
           model: request.model,
           input: { messages: [{ role: "user", content: [...images.map((image) => ({ image })), { text: request.prompt }] }] },
-          parameters: { size: request.size.replace("x", "*"), n: 1, watermark: false, prompt_extend: false },
+          parameters: { size: request.size.replace("x", "*"), n: 1, watermark: false, prompt_extend: request.model.startsWith("qwen-image-3.0") },
         },
       }));
-      usage = response.usage ? { input_tokens: 0, output_tokens: 0, image_count: response.usage.image_count } : undefined;
+      usage = response.usage ? { input_tokens: 0, output_tokens: 0, image_count: response.usage.output_image_count ?? response.usage.image_count, input_image_count: response.usage.input_image_count } : undefined;
       failure = response.code ? { code: response.code, message: response.message } : undefined;
       const content = response.output?.choices?.[0]?.message?.content;
       url = Array.isArray(content) ? content.find((item) => item?.image)?.image : undefined;

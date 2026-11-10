@@ -198,6 +198,38 @@ test("Qwen uses native multimodal generation and downloads PNGs without sending 
   assert.deepEqual([spend.cost_usd, spend.estimated], [0.04, 0]);
 });
 
+for (const model of ["qwen-image-3.0", "qwen-image-3.0-pro"]) test(`${model} records generated images and reference-input charges`, async (t) => {
+  const f = await providerFixture(t, "qwen");
+  await writeFile(join(f.root, "projects/book/project.yaml"), stringify({ image: { model }, pricing: { [model]: { per_image: 0.18, per_input_image: 0.02 } } }));
+  f.replies.set("/qwen/api/v1/services/aigc/multimodal-generation/generation", { body: { output: { choices: [{ message: { content: [{ image: `${f.url}/generated.png` }] } }] }, usage: { input_image_count: 2, output_image_count: 1, output_width: 1024, output_height: 1536 } } });
+  const handle = await f.workspace.context("book");
+  f.cleanup.push(handle.close);
+  const refs = [{ data: png, name: "style.png", label: "Style" }, { data: png, name: "character.png", label: "Character" }];
+  await generateImage(handle.ctx, { ...imageOptions, images: refs, refPaths: ["style.png", "character.png"] });
+  assert.equal(f.requests[0].payload.model, model);
+  assert.deepEqual(f.requests[0].payload.parameters, { size: "1664*2496", n: 1, watermark: false, prompt_extend: true });
+  assert.deepEqual(f.requests[0].payload.input, { messages: [{ role: "user", content: [...refs.map(() => ({ image: `data:image/png;base64,${encodeBase64(png)}` })), { text: imageOptions.prompt.text }] }] });
+  assert.equal(f.requests[1].headers.authorization, undefined);
+  const spend = (await f.workspace.ledger.get<{ cost_usd: number; estimated: number }>("SELECT * FROM spend"))!;
+  assert.deepEqual([spend.cost_usd, spend.estimated], [0.22, 0]);
+});
+
+test("Seedream Pro charges reference inputs after the included first image", async (t) => {
+  const f = await providerFixture(t);
+  const model = "doubao-seedream-5-0-pro-260628";
+  await writeFile(join(f.root, "projects/book/project.yaml"), stringify({ image: { model }, pricing: { [model]: { per_image: 0.30, per_input_image: 0.02, free_input_images: 1 } } }));
+  f.replies.set("/seedream/api/v3/images/generations", { body: { data: [{ b64_json: encodeBase64(png) }], usage: { generated_images: 1, input_images: 3, output_tokens: 20 } } });
+  const handle = await f.workspace.context("book");
+  f.cleanup.push(handle.close);
+  const refs = ["style", "character", "location"].map((name) => ({ data: png, name: `${name}.png`, label: name }));
+  await generateImage(handle.ctx, { ...imageOptions, images: refs, refPaths: refs.map((ref) => ref.name) });
+  assert.equal(f.requests[0].payload.model, model);
+  assert.deepEqual(f.requests[0].payload.image, refs.map(() => `data:image/png;base64,${encodeBase64(png)}`));
+  const spend = (await f.workspace.ledger.get<{ cost_usd: number; estimated: number }>("SELECT * FROM spend"))!;
+  assert.ok(Math.abs(spend.cost_usd - 0.34) < 1e-12);
+  assert.equal(spend.estimated, 0);
+});
+
 for (const provider of ["seedream", "qwen"] as const) {
   test(`${provider} shares the existing prepare, references, page review, export and budget pipeline`, async (t) => {
     const f = await providerFixture(t, provider);
@@ -304,6 +336,17 @@ test("per-image pricing requires reported image counts and never mistakes zero t
   assert.deepEqual(priceUsage(pricing, "image", { input_tokens: 0, output_tokens: 0, image_count: 2 }, 0.25, true, log), { cost: 0.08, estimated: false });
   for (const image_count of [undefined, NaN, -1]) assert.deepEqual(priceUsage(pricing, "image", { input_tokens: 0, output_tokens: 0, image_count }, 0.25, true, log), { cost: 0.25, estimated: true });
   assert.deepEqual(priceUsage(pricing, "image", undefined, 0.25, true, log), { cost: 0.25, estimated: true });
+});
+
+test("per-image input charges require valid reported counts and retain estimates when incomplete", () => {
+  const pricing = { image: { per_image: 0.18, per_input_image: 0.02 } };
+  const log = () => {};
+  assert.deepEqual(priceUsage(pricing, "image", { input_tokens: 0, output_tokens: 0, image_count: 1, input_image_count: 3 }, 0.25, true, log), { cost: 0.24, estimated: false });
+  assert.deepEqual(priceUsage(pricing, "image", { input_tokens: 0, output_tokens: 0, image_count: 1, input_image_count: 0 }, 0.25, true, log), { cost: 0.18, estimated: false });
+  for (const input_image_count of [undefined, NaN, -1, 0.5]) assert.deepEqual(priceUsage(pricing, "image", { input_tokens: 0, output_tokens: 0, image_count: 1, input_image_count }, 0.25, true, log), { cost: 0.25, estimated: true });
+  assert.deepEqual(priceUsage({ image: { per_image: 0.04 } }, "image", { input_tokens: 0, output_tokens: 0, image_count: 1, input_image_count: 3 }, 0.25, true, log), { cost: 0.04, estimated: false });
+  assert.deepEqual(priceUsage({ image: { ...pricing.image, free_input_images: 1 } }, "image", { input_tokens: 0, output_tokens: 0, image_count: 1, input_image_count: 1 }, 0.25, true, log), { cost: 0.18, estimated: false });
+  assert.deepEqual(priceUsage({ image: { ...pricing.image, free_input_images: 1 } }, "image", { input_tokens: 0, output_tokens: 0, image_count: 1, input_image_count: 0 }, 0.25, true, log), { cost: 0.18, estimated: false });
 });
 
 test("Web readiness uses project-effective per-kind key presence without exposing credentials", async (t) => {
