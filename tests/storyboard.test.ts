@@ -473,6 +473,23 @@ test("family and generic-owner references do not require absent characters' outf
   assert.equal((await h.db.get<Ref>("SELECT * FROM refs WHERE target_id = 'companion.daily'"))!.status, "candidate");
 });
 
+test("new generic cargo owners do not reintroduce the earlier cargo owner", () => {
+  for (const [text, evidence, chapters, included] of [
+    ["新来的货主围着看。", [], [1], false],
+    ["新来的货主围着看。货主来到Mountain。", [], [1], true],
+    ["新来的货主围着看。", ["2:1"], [1], true],
+    ["新来的货主围着看。", [], [2], true],
+  ] as const) {
+    const bible = makeBible(["hero", "owner"]);
+    bible.characters[1].name = "货主";
+    bible.characters[1].aliases = [];
+    bible.characters[1].evidence = [...evidence];
+    bible.outfits[1].chapters = [...chapters];
+    const chapter: Chapter = { id: "002", idx: 2, title: "Chapter two", text, summary: null, status: "imported" };
+    assert.equal(entitiesForChapter(bible, chapter).characters.some((character) => character.id === "owner"), included, text);
+  }
+});
+
 test("comparison filtering preserves real mentions, chapter evidence and outfit associations", () => {
   for (const [scenario, text, evidence, chapters, included] of [
     ["comparison alias", "hero比父亲年轻。", [], [1], false],
