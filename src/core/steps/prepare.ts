@@ -23,6 +23,37 @@ async function saveBible(ctx: Context, extraction: Extraction): Promise<void> {
   await ctx.fs.writeJson("bible/locations.json", extraction.locations);
 }
 
+export async function addSettings(ctx: Context, input: unknown) {
+  if (!await ctx.db.get("SELECT value FROM meta WHERE key = 'prepare.extract.completed'")) throw new PreconditionError("Prepare the novel before adding missing settings");
+  const additions = extractionSchema.parse(input);
+  if (!additions.characters.length && !additions.locations.length) throw new PreconditionError("Supply at least one missing character or location");
+  const bible = await getBible(ctx);
+  const chapters = new Map((await ctx.db.all<Chapter>("SELECT * FROM chapters ORDER BY idx")).map((chapter) => [chapter.idx, chapterData(chapter).paragraphs.length]));
+  const statements: SqlStatement[] = [];
+  for (const character of additions.characters) {
+    if (bible.characters.some((item) => item.id === character.id)) throw new PreconditionError(`Character ${character.id} already exists; settings add never replaces existing settings`);
+    if (!character.evidence.length || character.evidence.some((source) => {
+      const [chapter, paragraph] = source.split(":").map(Number);
+      return paragraph > (chapters.get(chapter) ?? 0);
+    })) throw new PreconditionError(`Character ${character.id} requires existing source-paragraph evidence`);
+    statements.push({ sql: "INSERT INTO characters (id, name, aliases, spec) VALUES (?, ?, ?, ?)", params: [character.id, character.name, JSON.stringify(character.aliases), JSON.stringify(character)] });
+    for (const outfit of character.outfits) {
+      if (bible.outfits.some((item) => item.id === outfit.id)) throw new PreconditionError(`Outfit ${outfit.id} already exists`);
+      if (outfit.chapters.some((chapter) => !chapters.has(chapter))) throw new PreconditionError(`Outfit ${outfit.id} refers to an unknown chapter`);
+      statements.push({ sql: "INSERT INTO outfits (id, character_id, name, spec, chapters) VALUES (?, ?, ?, ?, ?)", params: [outfit.id, character.id, outfit.name, JSON.stringify(outfit), JSON.stringify(outfit.chapters)] });
+    }
+  }
+  for (const location of additions.locations) {
+    if (bible.locations.some((item) => item.id === location.id)) throw new PreconditionError(`Location ${location.id} already exists; settings add never replaces existing settings`);
+    if (!location.chapters.length || location.chapters.some((chapter) => !chapters.has(chapter))) throw new PreconditionError(`Location ${location.id} requires existing chapters`);
+    statements.push({ sql: "INSERT INTO locations (id, name, spec) VALUES (?, ?, ?)", params: [location.id, location.name, JSON.stringify(location)] });
+  }
+  await ctx.db.transaction(statements);
+  if (additions.characters.length) await ctx.fs.writeJson("bible/characters.json", [...bible.characters, ...additions.characters]);
+  if (additions.locations.length) await ctx.fs.writeJson("bible/locations.json", [...bible.locations, ...additions.locations]);
+  return { characters: additions.characters.map((item) => item.id), outfits: additions.characters.flatMap((item) => item.outfits.map((outfit) => outfit.id)), locations: additions.locations.map((item) => item.id) };
+}
+
 export async function addOutfitChapter(ctx: Context, outfitId: string, chapterNumber: number | string, paragraphNumber: number | string) {
   const chapter = await getChapter(ctx, chapterNumber);
   const paragraph = Number(paragraphNumber);

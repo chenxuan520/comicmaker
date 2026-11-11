@@ -7,7 +7,7 @@ import { loadConfig } from "../adapters/config.js";
 import { LocalTemplateStore } from "../adapters/templates.js";
 import { budgetReport } from "../core/budget.js";
 import { createProject, importNovel } from "../core/project.js";
-import { addLocationChapter, addOutfitChapter, prepareBook } from "../core/steps/prepare.js";
+import { addLocationChapter, addOutfitChapter, addSettings, prepareBook } from "../core/steps/prepare.js";
 import { generateRefs, lockRef } from "../core/steps/refs.js";
 import { adaptChapter, patchStoryboard } from "../core/steps/adapt.js";
 import { redoPage, renderChapter } from "../core/steps/render.js";
@@ -63,6 +63,8 @@ action(program.command("list"), false, async (_, __, workspace) => ({ projects: 
 action(program.command("use <project_id>"), false, async ([id], _, workspace) => { await workspace.selectProject(id); return { current_project: id }; });
 action(program.command("import").requiredOption("--novel <path>"), true, async (_, flags, __, ctx) => importNovel(ctx!, new Uint8Array(await readFile(resolve(flags.novel!))), { force: flags.force }));
 action(program.command("prepare"), true, async (_, flags, __, ctx) => prepareBook(ctx!, { force: flags.force }));
+const settings = program.command("settings");
+action(settings.command("add").requiredOption("--file <path>"), true, async (_, flags, __, ctx) => addSettings(ctx!, JSON.parse(await readFile(resolve(flags.file!), "utf8"))));
 const outfits = program.command("outfits");
 action(outfits.command("include <outfit_id>").requiredOption("--chapter <n>").requiredOption("--paragraph <n>"), true, async ([id], flags, __, ctx) => addOutfitChapter(ctx!, id, flags.chapter!, flags.paragraph!));
 const locations = program.command("locations");

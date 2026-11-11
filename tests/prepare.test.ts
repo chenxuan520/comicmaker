@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createProject, importNovel } from "../src/core/project.js";
 import { PromptEngine } from "../src/core/prompts.js";
-import { prepareBook } from "../src/core/steps/prepare.js";
+import { addSettings, prepareBook } from "../src/core/steps/prepare.js";
 import { generateRefs, lockRef } from "../src/core/steps/refs.js";
 import { buildPagePrompt } from "../src/core/promptBuilder.js";
 import { generateImage } from "../src/core/image.js";
@@ -27,6 +27,81 @@ test("M1 extracts settings, retries invalid JSON once, and skips completed prepr
       assert.equal((await f.workspace.ledger.get<{ n: number }>("SELECT COUNT(*) AS n FROM spend"))!.n, 3);
     } finally { await handle.close(); }
   } finally { await f.close(); }
+});
+
+test("adding missing settings preserves existing originals, progress, caches and spend", async (t) => {
+  const ai = new MockAi();
+  const f = await fixture(ai);
+  await createProject(f.workspace.store, "book", "Book");
+  const handle = await f.workspace.context("book");
+  t.after(async () => { await handle.close(); await f.close(); });
+  const ctx = handle.ctx;
+  await importNovel(ctx, new TextEncoder().encode(novel));
+  await prepareBook(ctx);
+  ctx.config.refs.candidates = 1;
+  const style = (await generateRefs(ctx, { kind: "style" })).refs[0];
+  await lockRef(ctx, style.id);
+  await ctx.db.run("INSERT INTO pages (id, chapter_id, page_no, storyboard, status) VALUES ('001-p01', '001', 1, ?, 'planned')", [JSON.stringify(storyboard)]);
+  const tables = ["characters", "outfits", "locations", "chapters", "pages", "refs", "attempts", "meta"];
+  const before = await Promise.all(tables.map((table) => ctx.db.all(`SELECT * FROM ${table}`)));
+  const original = await ctx.fs.readBytes(style.path!);
+  const spend = await f.workspace.ledger.all("SELECT * FROM spend");
+  const calls = ai.structuredCalls.length + ai.imageCalls.length;
+  const character = { ...structuredClone(extraction.characters[0]), id: "teacher", name: "师父" };
+  character.outfits[0].id = "teacher.daily";
+  const location = { ...extraction.locations[0], id: "hut_gate", name: "柴门" };
+  const additions = { characters: [character], locations: [location] };
+  const input = structuredClone(additions);
+  assert.deepEqual(await addSettings(ctx, additions), { characters: ["teacher"], outfits: ["teacher.daily"], locations: ["hut_gate"] });
+  for (const [index, table] of tables.entries()) {
+    const after = await ctx.db.all<{ id?: string }>(`SELECT * FROM ${table}`);
+    assert.deepEqual(after.filter((row) => !["teacher", "teacher.daily", "hut_gate"].includes(row.id ?? "")), before[index]);
+  }
+  assert.deepEqual(JSON.parse((await ctx.fs.readText("bible/characters.json"))!), [...extraction.characters, character]);
+  assert.deepEqual(JSON.parse((await ctx.fs.readText("bible/locations.json"))!), [...extraction.locations, location]);
+  assert.deepEqual(await ctx.fs.readBytes(style.path!), original);
+  assert.deepEqual(await f.workspace.ledger.all("SELECT * FROM spend"), spend);
+  assert.equal(ai.structuredCalls.length + ai.imageCalls.length, calls);
+  assert.deepEqual(additions, input);
+});
+
+test("missing-setting additions validate every entity before writing", async (t) => {
+  const ai = new MockAi();
+  const f = await fixture(ai);
+  await createProject(f.workspace.store, "book", "Book");
+  const handle = await f.workspace.context("book");
+  t.after(async () => { await handle.close(); await f.close(); });
+  const ctx = handle.ctx;
+  await importNovel(ctx, new TextEncoder().encode(novel));
+  await assert.rejects(addSettings(ctx, extraction), /Prepare the novel/);
+  await prepareBook(ctx);
+  const character = { ...structuredClone(extraction.characters[0]), id: "teacher", name: "师父" };
+  character.outfits[0].id = "teacher.daily";
+  const location = { ...extraction.locations[0], id: "hut_gate", name: "柴门" };
+  const valid = { characters: [character], locations: [location] };
+  const before = await ctx.db.all("SELECT * FROM characters");
+  const mirror = await ctx.fs.readText("bible/characters.json");
+  const calls = ai.structuredCalls.length;
+  for (const change of ["no evidence", "unknown paragraph", "unknown evidence chapter", "unknown outfit chapter", "wrong owner", "existing location", "unknown location chapter", "empty location chapters", "duplicate ID", "existing character"]) {
+    const invalid = structuredClone(valid);
+    if (change === "no evidence") invalid.characters[0].evidence = [];
+    if (change === "unknown paragraph") invalid.characters[0].evidence = ["1:999"];
+    if (change === "unknown evidence chapter") invalid.characters[0].evidence = ["2:1"];
+    if (change === "unknown outfit chapter") invalid.characters[0].outfits[0].chapters = [2];
+    if (change === "wrong owner") invalid.characters[0].outfits[0].id = "other.daily";
+    if (change === "existing location") invalid.locations = extraction.locations;
+    if (change === "unknown location chapter") invalid.locations[0].chapters = [2];
+    if (change === "empty location chapters") invalid.locations[0].chapters = [];
+    if (change === "duplicate ID") invalid.characters.push(invalid.characters[0]);
+    if (change === "existing character") invalid.characters = extraction.characters;
+    await assert.rejects(addSettings(ctx, invalid), change);
+    assert.deepEqual(await ctx.db.all("SELECT * FROM characters"), before);
+    assert.deepEqual((await ctx.db.all<{ id: string }>("SELECT id FROM outfits")).map((item) => item.id), ["lin_qing.daily"]);
+    assert.deepEqual((await ctx.db.all<{ id: string }>("SELECT id FROM locations")).map((item) => item.id), ["qinglan_peak"]);
+    assert.equal(await ctx.fs.readText("bible/characters.json"), mirror);
+    assert.equal(ai.structuredCalls.length, calls);
+  }
+  await assert.rejects(addSettings(ctx, { characters: [], locations: [] }), /at least one/);
 });
 
 test("forced preparation clears old summaries atomically and resumes an interrupted new summary", async () => {

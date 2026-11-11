@@ -168,6 +168,8 @@ pnpm comic lock LOCATION_REF_ID
 
 ### 制作与重做
 
+提取遗漏整个人物或地点时，可用 `pnpm comic settings add -p demo-book --file missing-settings.json --json` 零费用补录。文件使用提取结果的结构 `{ "characters": [...], "locations": [...] }`，只放缺项；人物字段与 `bible/characters.json` 相同，地点字段与 `bible/locations.json` 相同。命令校验角色证据段号、适用章、服装归属及 ID，整批通过后追加，不调用模型，不覆盖已有设定、参考图或章节状态；`--force` 也不允许覆盖。原文是否支持这些设定由操作者先核实，新增参考图仍需单独生成并锁定。
+
 设定提取漏掉某章的既有服装关联时，先核对人物确实露面或沿用这套服装的原文段号，再用 `pnpm comic outfits include -p demo-book OUTFIT_ID --chapter 2 --paragraph 1 --json` 补关联。该操作只追加服装适用章与角色的原文证据，不调用模型，不重做全书提取，也不修改参考图、旧分镜或已选图；仅提及家属/旧物时不要补成现场人物，后续制作仍须通过锁定检查。
 
 已知地点漏掉本章关联时同样可用 `pnpm comic locations include -p demo-book LOCATION_ID --chapter 2 --paragraph 1 --json`，仅为既有地点追加适用章；原文只提及未到达的地方时，不把它当成当前场景。原文语义由操作者先核实，命令只校验目标与段号是否存在。
@@ -241,6 +243,7 @@ pnpm comic export -p demo-book --chapter 1 --force --json
 | `list` / `use <project_id>` | 无额外参数 | 列项目及进度 / 切换当前项目 |
 | `import` | `--novel <path>`，可选 `--force` | 复制原稿并切章 |
 | `prepare` | 可选 `--force` | 提取设定、生成摘要 |
+| `settings add` | `--file <JSON路径>` 必填 | 零费用追加遗漏的人物或地点，校验证据与章号，不覆盖已有设定 |
 | `refs gen` | `--kind style\|outfit\|location`，可选 `--target <id>`、`--force` | 生成候选 |
 | `refs list` / `lock <ref_id>` | list 可选 `--status candidate\|locked\|rejected` | 列素材 / 锁定选定的图 |
 | `outfits include <outfit_id>` | `--chapter <n>`、`--paragraph <原文段号>` 必填 | 给既有服装追加本章关联与原文证据，不调用模型或改参考图 |

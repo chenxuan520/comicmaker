@@ -434,6 +434,32 @@ test("CLI real-SDK workflow exports valid files, accounts exact usage, skips rer
   assert.equal(f.mock.requests.length, 14);
 });
 
+test("CLI adds missing settings without re-extracting or replacing existing entities", { timeout: 30_000 }, async (t) => {
+  const f = await localFixture(t);
+  await cli(f.root, ["new", "book", "--title", "Book", "--json"]);
+  const novelPath = join(f.root, "novel.txt");
+  await writeFile(novelPath, novel);
+  await cli(f.root, ["import", "--novel", novelPath, "--json"]);
+  const character = { ...structuredClone(extraction.characters[0]), id: "teacher", name: "师父" };
+  character.outfits[0].id = "teacher.daily";
+  const location = { ...extraction.locations[0], id: "hut_gate", name: "柴门" };
+  const file = join(f.root, "settings.json");
+  await writeFile(file, JSON.stringify({ characters: [character], locations: [location] }));
+  await cli(f.root, ["settings", "add", "--file", file, "--json"], 2);
+  assert.equal(f.mock.requests.length, 0);
+  await cli(f.root, ["prepare", "--json"]);
+  const before = await cli<BudgetReport>(f.root, ["budget", "--json"]);
+  assert.deepEqual(await cli(f.root, ["settings", "add", "--file", file, "-p", "book", "--json"]), { characters: ["teacher"], outfits: ["teacher.daily"], locations: ["hut_gate"] });
+  const status = await cli<Status>(f.root, ["status", "--json"]);
+  assert.ok(status.outfits.some((outfit) => outfit.id === "teacher.daily"));
+  assert.ok(status.outfits.some((outfit) => outfit.id === "lin_qing.daily"));
+  assert.ok(status.locations.some((item) => item.id === "hut_gate"));
+  assert.deepEqual(await readFile(join(f.root, "projects/book/bible/characters.json"), "utf8").then(JSON.parse), [...extraction.characters, character]);
+  await cli(f.root, ["settings", "add", "--file", file, "--force", "--json"], 2);
+  assert.equal(f.mock.requests.length, 2);
+  assert.deepEqual(await cli<BudgetReport>(f.root, ["budget", "--json"]), before);
+});
+
 test("backend project/config/prompt/import APIs validate before writing and reject rebinding and private paths", { timeout: 30_000 }, async (t) => {
   const f = await localFixture(t);
   const server = await startServer(f.workspace, { host: "127.0.0.1", port: 0 });
