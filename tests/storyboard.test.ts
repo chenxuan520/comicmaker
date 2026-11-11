@@ -14,6 +14,7 @@ import { getStatus } from "../src/core/status.js";
 import { adaptChapter, patchStoryboard, saveStoryboard } from "../src/core/steps/adapt.js";
 import { exportChapter } from "../src/core/steps/export.js";
 import { redoPage, renderChapter } from "../src/core/steps/render.js";
+import { addOutfitChapter } from "../src/core/steps/prepare.js";
 import { countChineseCharacters, validateStoryboard } from "../src/core/storyboardCheck.js";
 import type { Bible, Chapter, Context, Page, Ref } from "../src/core/types.js";
 
@@ -362,6 +363,56 @@ test("chapter characters without relevant outfits are listed as precondition fai
   assert.equal(h.calls.length, 0);
 });
 
+test("existing outfit chapter association is sourced, free and preserves refs and prior selections", async (t) => {
+  const bible = makeBible();
+  bible.outfits[0].chapters = [1];
+  const h = await harness(t, [makeAdaptation(), { pages: [makePage()] }, pass], bible);
+  await saveStoryboard(h.ctx, "001", [makePage()]);
+  await seedHistory(h, 1, 2);
+  await h.db.run("INSERT INTO chapters (id, idx, title, text, summary, status) VALUES ('002', 2, 'Chapter two', 'hero enters Mountain.', 'Second summary', 'imported')");
+  await assert.rejects(adaptChapter(h.ctx, 2), /without chapter-relevant outfits/);
+  const pages = await h.db.all("SELECT * FROM pages");
+  const refs = await h.db.all("SELECT * FROM refs ORDER BY id");
+  const attempts = await h.db.all("SELECT * FROM attempts ORDER BY id");
+  const reviews = await h.db.all("SELECT * FROM reviews ORDER BY id");
+  const meta = await h.db.all("SELECT * FROM meta ORDER BY key");
+  const images = [...h.bytes.entries()];
+  assert.deepEqual(await addOutfitChapter(h.ctx, "hero.daily", 2, 1), { chapter: "002", outfit: "hero.daily", source: "2:1", skipped: false });
+  assert.equal(h.calls.length, 0);
+  assert.equal((await h.ledger.all("SELECT * FROM spend")).length, 0);
+  assert.deepEqual(await h.db.all("SELECT * FROM pages"), pages);
+  assert.deepEqual(await h.db.all("SELECT * FROM refs ORDER BY id"), refs);
+  assert.deepEqual(await h.db.all("SELECT * FROM attempts ORDER BY id"), attempts);
+  assert.deepEqual(await h.db.all("SELECT * FROM reviews ORDER BY id"), reviews);
+  assert.deepEqual(await h.db.all("SELECT * FROM meta ORDER BY key"), meta);
+  assert.deepEqual([...h.bytes.entries()], images);
+  const saved = await h.db.get<{ spec: string; chapters: string }>("SELECT spec, chapters FROM outfits WHERE id = 'hero.daily'");
+  assert.deepEqual(JSON.parse(saved!.chapters), [1, 2]);
+  assert.deepEqual(JSON.parse(saved!.spec), { ...bible.outfits[0], chapters: [1, 2] });
+  assert.deepEqual((h.json.get("bible/characters.json") as Bible["characters"])[0].evidence, ["2:1"]);
+  assert.deepEqual((h.json.get("bible/characters.json") as Bible["characters"])[0].outfits[0].chapters, [1, 2]);
+  assert.deepEqual(await addOutfitChapter(h.ctx, "hero.daily", 2, 1), { chapter: "002", outfit: "hero.daily", source: "2:1", skipped: true });
+  await h.db.run("UPDATE refs SET status = 'candidate' WHERE target_id = 'hero.daily'");
+  await assert.rejects(adaptChapter(h.ctx, 2), /Lock the missing reference images/);
+  assert.equal(h.calls.length, 0);
+  await h.db.run("UPDATE refs SET status = 'locked' WHERE target_id = 'hero.daily'");
+  await adaptChapter(h.ctx, 2);
+  assert.equal(h.calls.length, 3);
+});
+
+test("outfit chapter association rejects unknown targets and invalid source paragraphs before writing", async (t) => {
+  const h = await harness(t);
+  const saved = await h.db.all("SELECT * FROM outfits");
+  const characters = await h.db.all("SELECT * FROM characters");
+  for (const [outfit, chapter, paragraph] of [["unknown", 1, 1], ["hero.daily", 99, 1], ["hero.daily", 1, 0], ["hero.daily", 1, 3], ["hero.daily", 1, "x"]] as const) {
+    await assert.rejects(addOutfitChapter(h.ctx, outfit, chapter, paragraph), PreconditionError);
+  }
+  assert.deepEqual(await h.db.all("SELECT * FROM outfits"), saved);
+  assert.deepEqual(await h.db.all("SELECT * FROM characters"), characters);
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.jsonWrites.length, 0);
+});
+
 test("later chapters do not require comparison-only characters' outfits or locked references", async (t) => {
   const bible = makeBible(["hero", "father"]);
   bible.characters[1].name = "主角父亲";
@@ -387,7 +438,7 @@ test("family and generic-owner references do not require absent characters' outf
     bible.outfits[index].chapters = [1];
   }
   const h = await harness(t, [makeAdaptation(), { pages: [makePage()] }, pass], bible);
-  await h.db.run("INSERT INTO chapters (id, idx, title, text, summary, status) VALUES ('002', 2, 'Chapter two', ?, 'Second summary', 'imported')", ["hero enters Mountain.\n说陶顺的家人收过信。铺里有一只山中修士常用的旧囊。"]);
+  await h.db.run("INSERT INTO chapters (id, idx, title, text, summary, status) VALUES ('002', 2, 'Chapter two', ?, 'Second summary', 'imported')", ["hero enters Mountain.\n说陶顺的家人收过信，又问起陶顺家的近况。铺里有一只山中修士常用的旧囊。"]);
   await h.db.run("UPDATE refs SET status = 'candidate' WHERE target_id IN ('traveler.daily', 'companion.daily')");
   await adaptChapter(h.ctx, 2);
   assert.deepEqual(JSON.parse(h.calls[0].user).characters.map((character: { id: string }) => character.id), ["hero"]);
@@ -401,6 +452,7 @@ test("comparison filtering preserves real mentions, chapter evidence and outfit 
   for (const [scenario, text, evidence, chapters, included] of [
     ["comparison alias", "hero比父亲年轻。", [], [1], false],
     ["family-only reference", "hero提起主角父亲的家人收过信。", [], [1], false],
+    ["family-only reference without 的", "hero提起主角父亲家收过信。", [], [1], false],
     ["generic-owner reference", "铺里有主角父亲常用的旧囊。", [], [1], false],
     ["family reference and real appearance", "主角父亲的家人收过信。主角父亲来到Mountain。", [], [1], true],
     ["owner reference and real appearance", "有主角父亲常用的旧囊。主角父亲来到Mountain。", [], [1], true],

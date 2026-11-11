@@ -421,6 +421,13 @@ test("CLI real-SDK workflow exports valid files, accounts exact usage, skips rer
   assert.deepEqual(await readFile(join(projectRoot, "chapters/001/attempts/p01-a1.png")), original);
   const preview = await cli<{ prompt: { text: string } }>(f.root, ["prompts", "render", "image", "--page", "001-p01", "--json"]);
   assert.ok(preview.prompt.text.includes("林青：青岚峰弟子"));
+  const outfit = storyboard.panels[0].characters[0].outfit;
+  const association = await cli<{ chapter: string; outfit: string; source: string }>(f.root, ["outfits", "include", outfit, "--chapter", "1", "--paragraph", "1", "-p", "book", "--json"]);
+  assert.equal(association.chapter, "001");
+  assert.equal(association.outfit, outfit);
+  assert.equal(association.source, "1:1");
+  await cli(f.root, ["outfits", "include", outfit, "--chapter", "1", "--paragraph", "999", "--json"], 2);
+  assert.equal(f.mock.requests.length, 14);
 });
 
 test("backend project/config/prompt/import APIs validate before writing and reject rebinding and private paths", { timeout: 30_000 }, async (t) => {

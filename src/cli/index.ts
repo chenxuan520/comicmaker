@@ -7,7 +7,7 @@ import { loadConfig } from "../adapters/config.js";
 import { LocalTemplateStore } from "../adapters/templates.js";
 import { budgetReport } from "../core/budget.js";
 import { createProject, importNovel } from "../core/project.js";
-import { prepareBook } from "../core/steps/prepare.js";
+import { addOutfitChapter, prepareBook } from "../core/steps/prepare.js";
 import { generateRefs, lockRef } from "../core/steps/refs.js";
 import { adaptChapter, patchStoryboard } from "../core/steps/adapt.js";
 import { redoPage, renderChapter } from "../core/steps/render.js";
@@ -22,7 +22,7 @@ interface Flags {
   projectId?: string; json?: boolean; force?: boolean; ignoreLimit?: boolean;
   title?: string; style?: string; novel?: string; chapter?: string; page?: string;
   kind?: string; target?: string; status?: string; note?: string; workspace?: boolean;
-  project?: boolean; dryRun?: boolean; host?: string; port?: string; file?: string;
+  project?: boolean; dryRun?: boolean; host?: string; port?: string; file?: string; paragraph?: string;
 }
 
 const program = new Command().name("comic").description("Local AI novel-to-comic studio").version("0.1.0")
@@ -63,6 +63,8 @@ action(program.command("list"), false, async (_, __, workspace) => ({ projects: 
 action(program.command("use <project_id>"), false, async ([id], _, workspace) => { await workspace.selectProject(id); return { current_project: id }; });
 action(program.command("import").requiredOption("--novel <path>"), true, async (_, flags, __, ctx) => importNovel(ctx!, new Uint8Array(await readFile(resolve(flags.novel!))), { force: flags.force }));
 action(program.command("prepare"), true, async (_, flags, __, ctx) => prepareBook(ctx!, { force: flags.force }));
+const outfits = program.command("outfits");
+action(outfits.command("include <outfit_id>").requiredOption("--chapter <n>").requiredOption("--paragraph <n>"), true, async ([id], flags, __, ctx) => addOutfitChapter(ctx!, id, flags.chapter!, flags.paragraph!));
 
 const refs = program.command("refs");
 action(refs.command("gen").requiredOption("--kind <kind>").option("--target <id>"), true, async (_, flags, __, ctx) => {

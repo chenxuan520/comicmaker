@@ -168,6 +168,8 @@ pnpm comic lock LOCATION_REF_ID
 
 ### 制作与重做
 
+设定提取漏掉某章的既有服装关联时，先核对人物确实露面或沿用这套服装的原文段号，再用 `pnpm comic outfits include -p demo-book OUTFIT_ID --chapter 2 --paragraph 1 --json` 补关联。该操作只追加服装适用章与角色的原文证据，不调用模型，不重做全书提取，也不修改参考图、旧分镜或已选图；仅提及家属/旧物时不要补成现场人物，后续制作仍须通过锁定检查。
+
 分镜默认要求主要/反复登场人物首次正式露面时显示“姓名或称呼＋当前身份/关系”，并在明显的空间切换、时间跳跃时给出简短提示。介绍与时地字幕使用已有 `narration` 文字，进入逐字审核并遵守框数和字数限制；不编造未知身份、时间，也不提前泄露后期信息。已在前章画面中出场的人物不每页重复介绍，画像和回忆不应误作现场人物。
 
 完成本章所需设定锁定后：
@@ -239,6 +241,7 @@ pnpm comic export -p demo-book --chapter 1 --force --json
 | `prepare` | 可选 `--force` | 提取设定、生成摘要 |
 | `refs gen` | `--kind style\|outfit\|location`，可选 `--target <id>`、`--force` | 生成候选 |
 | `refs list` / `lock <ref_id>` | list 可选 `--status candidate\|locked\|rejected` | 列素材 / 锁定选定的图 |
+| `outfits include <outfit_id>` | `--chapter <n>`、`--paragraph <原文段号>` 必填 | 给既有服装追加本章关联与原文证据，不调用模型或改参考图 |
 | `adapt` / `render` | `--chapter <n>` 必填，可选 `--force` | 改编、分镜与自审 / 生图、审查与重抽 |
 | `storyboard patch` | `--chapter <n>`、`--file <JSON路径>` 必填 | 只替换指定既有页，程序校验后待重新审核；不调用模型 |
 | `redo` | `--page <page_id>` 必填，`--note <说明>` 可选 | 重做一页 |
