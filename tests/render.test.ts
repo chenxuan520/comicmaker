@@ -64,6 +64,13 @@ test("review thresholds reject missing identities/colors and disabled checks do 
   assert.equal(evaluateReview(storyboard, [], extra, f.ctx.config.review).passed, false);
 });
 
+test("visual review prompt requires every appearance and explicit missing-character findings", async (t) => {
+  const f = await prepared(t);
+  const prompt = await f.ctx.prompts.pair("review_visual", { page: storyboard, refs: [], characters: [], outfits: [] });
+  assert.match(prompt.system, /同一角色跨格出现时也要逐格记录/);
+  assert.match(prompt.system, /分镜要求但图片缺失的角色.*0.*具体缺失原因/);
+});
+
 test("M2 retries a text error with exact corrections, preserves attempts, and skips passed pages", async (t) => {
   const f = await prepared(t);
   let textCalls = 0;
