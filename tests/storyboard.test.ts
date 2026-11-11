@@ -378,9 +378,34 @@ test("later chapters do not require comparison-only characters' outfits or locke
   assert.equal((await h.db.get<Ref>("SELECT * FROM refs WHERE target_id = 'father.daily'"))!.status, "candidate");
 });
 
+test("family and generic-owner references do not require absent characters' outfits", async (t) => {
+  const bible = makeBible(["hero", "traveler", "companion"]);
+  bible.characters[1].name = "山中修士";
+  bible.characters[2].name = "陶顺";
+  for (let index = 1; index < bible.characters.length; index++) {
+    bible.characters[index].evidence = ["1:1"];
+    bible.outfits[index].chapters = [1];
+  }
+  const h = await harness(t, [makeAdaptation(), { pages: [makePage()] }, pass], bible);
+  await h.db.run("INSERT INTO chapters (id, idx, title, text, summary, status) VALUES ('002', 2, 'Chapter two', ?, 'Second summary', 'imported')", ["hero enters Mountain.\n说陶顺的家人收过信。铺里有一只山中修士常用的旧囊。"]);
+  await h.db.run("UPDATE refs SET status = 'candidate' WHERE target_id IN ('traveler.daily', 'companion.daily')");
+  await adaptChapter(h.ctx, 2);
+  assert.deepEqual(JSON.parse(h.calls[0].user).characters.map((character: { id: string }) => character.id), ["hero"]);
+  assert.deepEqual(JSON.parse(h.calls[0].user).outfits.map((outfit: { id: string }) => outfit.id), ["hero.daily"]);
+  assert.equal(h.calls.length, 3);
+  assert.equal((await h.db.get<Ref>("SELECT * FROM refs WHERE target_id = 'traveler.daily'"))!.status, "candidate");
+  assert.equal((await h.db.get<Ref>("SELECT * FROM refs WHERE target_id = 'companion.daily'"))!.status, "candidate");
+});
+
 test("comparison filtering preserves real mentions, chapter evidence and outfit associations", () => {
   for (const [scenario, text, evidence, chapters, included] of [
     ["comparison alias", "hero比父亲年轻。", [], [1], false],
+    ["family-only reference", "hero提起主角父亲的家人收过信。", [], [1], false],
+    ["generic-owner reference", "铺里有主角父亲常用的旧囊。", [], [1], false],
+    ["family reference and real appearance", "主角父亲的家人收过信。主角父亲来到Mountain。", [], [1], true],
+    ["owner reference and real appearance", "有主角父亲常用的旧囊。主角父亲来到Mountain。", [], [1], true],
+    ["reference with chapter evidence", "主角父亲的家人收过信。", ["2:1"], [1], true],
+    ["reference with chapter outfit", "主角父亲常用的旧囊。", [], [2], true],
     ["another real mention", "hero比主角父亲年轻。主角父亲来到Mountain。", [], [1], true],
     ["chapter evidence", "hero比主角父亲年轻。", ["2:1"], [1], true],
     ["chapter outfit", "hero比主角父亲年轻。", [], [2], true],
