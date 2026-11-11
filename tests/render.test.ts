@@ -71,6 +71,53 @@ test("visual review prompt requires every appearance and explicit missing-charac
   assert.match(prompt.system, /分镜要求但图片缺失的角色.*0.*具体缺失原因/);
 });
 
+test("an incomplete visual response is retried on the same image, not redrawn", async (t) => {
+  const f = await prepared(t);
+  f.ctx.config.review.max_attempts = 1;
+  let visualCalls = 0;
+  f.ai.onStructured = (request) => request.schema_name === "review_visual" && ++visualCalls === 1
+    ? { ...structuredClone(visual), characters: [visual.characters[0]] }
+    : mockOutput(request);
+  const images = f.ai.imageCalls.length;
+  assert.equal((await renderPage(f.ctx, "001-p01")).status, "passed");
+  assert.equal(f.ai.imageCalls.length - images, 1);
+  assert.equal(visualCalls, 2);
+  assert.equal(f.ai.structuredCalls.filter((call) => call.schema_name === "review_text").length, 1);
+  assert.match(f.ai.structuredCalls.filter((call) => call.schema_name === "review_visual").at(-1)!.user, /Missing visual record for panel 2, character lin_qing/);
+});
+
+test("exhausted incomplete reviews preserve the saved image and resume without repeating OCR", async (t) => {
+  const f = await prepared(t);
+  f.ctx.config.review.max_attempts = 1;
+  f.ai.onStructured = (request) => request.schema_name === "review_visual"
+    ? { ...structuredClone(visual), characters: [visual.characters[0]] }
+    : mockOutput(request);
+  const images = f.ai.imageCalls.length;
+  await assert.rejects(renderPage(f.ctx, "001-p01"), /Missing visual record/);
+  assert.equal(f.ai.imageCalls.length - images, 1);
+  assert.equal(f.ai.structuredCalls.filter((call) => call.schema_name === "review_visual").length, 2);
+  assert.equal((await f.ctx.db.all("SELECT * FROM reviews")).length, 0);
+  assert.equal((await f.ctx.db.all("SELECT * FROM llm_calls WHERE status = 'error'")).length, 2);
+  const attempt = await f.ctx.db.get<{ id: string; path: string }>("SELECT id,path FROM attempts WHERE page_id = '001-p01'");
+  const original = await f.ctx.fs.readBytes(attempt!.path);
+  assert.equal(await f.ctx.db.get("SELECT value FROM meta WHERE key = ?", [`review.visual.${attempt!.id}`]), undefined);
+  f.ai.onStructured = undefined;
+  assert.equal((await renderPage(f.ctx, "001-p01")).status, "passed");
+  assert.equal(f.ai.imageCalls.length - images, 1);
+  assert.equal(f.ai.structuredCalls.filter((call) => call.schema_name === "review_text").length, 1);
+  assert.deepEqual(await f.ctx.fs.readBytes(attempt!.path), original);
+});
+
+test("explicit zero-score missing characters are valid failed reviews, not schema retries", async (t) => {
+  const f = await prepared(t);
+  f.ctx.config.review.max_attempts = 1;
+  f.ai.onStructured = (request) => request.schema_name === "review_visual"
+    ? { ...structuredClone(visual), characters: visual.characters.map((character) => ({ ...character, identity_match: 0, color_match: 0, issue: "Required character is missing" })) }
+    : mockOutput(request);
+  assert.equal((await renderPage(f.ctx, "001-p01")).status, "flagged");
+  assert.equal(f.ai.structuredCalls.filter((call) => call.schema_name === "review_visual").length, 1);
+});
+
 test("M2 retries a text error with exact corrections, preserves attempts, and skips passed pages", async (t) => {
   const f = await prepared(t);
   let textCalls = 0;

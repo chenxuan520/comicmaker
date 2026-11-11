@@ -11,7 +11,7 @@ import { createProject, importNovel } from "../src/core/project.js";
 import { runChapter } from "../src/core/pipeline.js";
 import { prepareBook } from "../src/core/steps/prepare.js";
 import { generateRefs, lockRef } from "../src/core/steps/refs.js";
-import { extraction, fixture, MockAi, mockOutput, novel, png } from "./helpers.js";
+import { extraction, fixture, MockAi, mockOutput, novel, png, visual } from "./helpers.js";
 
 type Server = Awaited<ReturnType<typeof startServer>>;
 const baseTime = Date.parse("2030-11-10T14:59:00Z");
@@ -294,7 +294,7 @@ test("flagged scheduled pages pause subsequent daily chapters even when export c
   const f = await scheduleFixture(t);
   const structured = f.ai.onStructured!;
   f.ai.onStructured = (request) => request.schema_name === "review_visual"
-    ? { panel_count: 3, characters: [], content: [], artifacts: [], fix_instructions: "Restore character identity" }
+    ? { ...visual, characters: visual.characters.map((character) => ({ ...character, identity_match: 0, color_match: 0, issue: "Required character is missing" })), fix_instructions: "Restore character identity" }
     : structured(request);
   await api(f.server, "/api/projects/book/schedule", dailyInput);
   t.mock.timers.tick(61_000);

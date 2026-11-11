@@ -89,7 +89,15 @@ export async function reviewAttempt(ctx: Context, attemptId: string, page: PageS
       const referenceData = await visualRefs(ctx, page);
       const images = [pageImage, ...await Promise.all(referenceData.map(async (ref) => ({ data: (await ctx.fs.readBytes(ref.path!))!, name: `${ref.id}.png`, label: ref.label })))];
       const cached = await ctx.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", [`review.visual.${attemptId}`]);
-      visual = cached ? visualReviewSchema.parse(JSON.parse(cached.value)) : await structuredCall(ctx, { step: "review", template: "review_visual", model: ctx.config.models.review_visual, schema: visualReviewSchema, data: { page, refs: referenceData, characters: bible.characters, outfits: bible.outfits }, images });
+      const schema = visualReviewSchema.superRefine((result, validation) => {
+        if (result.panel_count !== page.panels.length || ctx.config.review.missing_character === "ignore" || !(ctx.config.review.checks.identity || ctx.config.review.checks.color)) return;
+        for (const [index, panel] of page.panels.entries()) for (const character of panel.characters) {
+          if (!result.characters.some((item) => item.panel === index + 1 && item.char_id === character.id)) {
+            validation.addIssue({ code: "custom", path: ["characters"], message: `Missing visual record for panel ${index + 1}, character ${character.id}; report its scores, including zero scores for a genuinely absent character` });
+          }
+        }
+      });
+      visual = cached ? visualReviewSchema.parse(JSON.parse(cached.value)) : await structuredCall(ctx, { step: "review", template: "review_visual", model: ctx.config.models.review_visual, schema, data: { page, refs: referenceData, characters: bible.characters, outfits: bible.outfits }, images });
       await ctx.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", [`review.visual.${attemptId}`, JSON.stringify(visual)]);
     }
   }
