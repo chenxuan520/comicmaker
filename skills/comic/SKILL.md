@@ -49,6 +49,7 @@ description: 操作 comicmaker 本地小说转漫画 CLI 时使用，包括项�
 | `import` | 必填 `--novel <path>`，可选 `--force` | 复制原稿并切章；force 归档旧 source，清工作进度，保留历史图与账本，需重新 prepare |
 | `prepare` | 可选 `--force` | 提取角色 / 服装 / 地点与摘要；收费，已有结果默认跳过 |
 | `outfits include <outfit_id>` | 必填 `--chapter <n>`、`--paragraph <原文段号>` | 核对原文中本人露面/服装沿用的证据后，为既有服装追加本章关联；只校验段号存在，不代做语义判断；不调用模型，不改锁定图或旧选图，后续仍检查锁定 |
+| `locations include <location_id>` | 必填 `--chapter <n>`、`--paragraph <原文段号>` | 核对本章确实进入该既有地点后补适用章；不把只被提及的地点当现场，不调用模型或改锁定图，目标和段号必须存在 |
 | `refs gen` | 必填 `--kind style\|outfit\|location`，可选 `--target <id>`、`--force` | 生成候选；省略 target 为该类未锁定项补齐，force 仅追加；服装 / 地点需 prepare 和已锁定画风 |
 | `refs list` | 可选 `--status candidate\|locked\|rejected` | 返回 refs 数组，包含 ID、类型、target、路径、sha256、prompt、状态 |
 | `lock <ref_id>` | 无 | 锁定代理检查后选中的 candidate；用户主动要求自行选图时遵从其选择，同一 kind / target 已有 locked 时不能替换 |

@@ -426,6 +426,10 @@ test("CLI real-SDK workflow exports valid files, accounts exact usage, skips rer
   assert.equal(association.chapter, "001");
   assert.equal(association.outfit, outfit);
   assert.equal(association.source, "1:1");
+  const location = storyboard.panels[0].location_id;
+  const locationAssociation = await cli<{ chapter: string; location: string; source: string }>(f.root, ["locations", "include", location, "--chapter", "1", "--paragraph", "1", "-p", "book", "--json"]);
+  assert.equal(locationAssociation.location, location);
+  assert.equal(locationAssociation.source, "1:1");
   await cli(f.root, ["outfits", "include", outfit, "--chapter", "1", "--paragraph", "999", "--json"], 2);
   assert.equal(f.mock.requests.length, 14);
 });

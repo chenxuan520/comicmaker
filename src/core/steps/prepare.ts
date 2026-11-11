@@ -47,6 +47,22 @@ export async function addOutfitChapter(ctx: Context, outfitId: string, chapterNu
   return { chapter: chapter.id, outfit: outfitId, source, skipped };
 }
 
+export async function addLocationChapter(ctx: Context, locationId: string, chapterNumber: number | string, paragraphNumber: number | string) {
+  const chapter = await getChapter(ctx, chapterNumber);
+  const paragraph = Number(paragraphNumber);
+  if (!Number.isSafeInteger(paragraph) || paragraph < 1 || paragraph > chapterData(chapter).paragraphs.length) throw new PreconditionError("Location association requires an existing source paragraph");
+  const bible = await getBible(ctx);
+  const location = bible.locations.find((item) => item.id === locationId);
+  if (!location) throw new PreconditionError(`Unknown location target ${locationId}`);
+  const skipped = location.chapters.includes(chapter.idx);
+  if (!skipped) {
+    location.chapters.push(chapter.idx);
+    await ctx.db.run("UPDATE locations SET spec = ? WHERE id = ?", [JSON.stringify(location), locationId]);
+  }
+  await ctx.fs.writeJson("bible/locations.json", bible.locations);
+  return { chapter: chapter.id, location: locationId, source: `${chapter.idx}:${paragraph}`, skipped };
+}
+
 export async function prepareBook(ctx: Context, options: { force?: boolean } = {}) {
   const chapters = await ctx.db.all<Chapter>("SELECT * FROM chapters ORDER BY idx");
   if (!chapters.length) throw new PreconditionError("Import a novel before preparing its settings");

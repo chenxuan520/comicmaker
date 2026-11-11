@@ -14,7 +14,7 @@ import { getStatus } from "../src/core/status.js";
 import { adaptChapter, patchStoryboard, saveStoryboard } from "../src/core/steps/adapt.js";
 import { exportChapter } from "../src/core/steps/export.js";
 import { redoPage, renderChapter } from "../src/core/steps/render.js";
-import { addOutfitChapter } from "../src/core/steps/prepare.js";
+import { addLocationChapter, addOutfitChapter } from "../src/core/steps/prepare.js";
 import { countChineseCharacters, validateStoryboard } from "../src/core/storyboardCheck.js";
 import type { Bible, Chapter, Context, Page, Ref } from "../src/core/types.js";
 
@@ -398,6 +398,31 @@ test("existing outfit chapter association is sourced, free and preserves refs an
   await h.db.run("UPDATE refs SET status = 'locked' WHERE target_id = 'hero.daily'");
   await adaptChapter(h.ctx, 2);
   assert.equal(h.calls.length, 3);
+});
+
+test("existing location chapter association preserves all other settings and old rendering state", async (t) => {
+  const bible = makeBible();
+  bible.locations[0].name = "旧屋";
+  bible.locations[0].chapters = [1];
+  const h = await harness(t, [], bible);
+  await saveStoryboard(h.ctx, "001", [makePage()]);
+  await seedHistory(h, 1, 2);
+  await h.db.run("INSERT INTO chapters (id, idx, title, text, summary, status) VALUES ('002', 2, 'Chapter two', 'hero回家。', 'Second summary', 'imported')");
+  const chapter = (await h.db.get<Chapter>("SELECT * FROM chapters WHERE id = '002'"))!;
+  assert.deepEqual(entitiesForChapter(bible, chapter).locations, []);
+  const tables = ["outfits", "characters", "refs", "pages", "attempts", "reviews", "meta"];
+  const old = await Promise.all(tables.map((table) => h.db.all(`SELECT * FROM ${table}`)));
+  assert.deepEqual(await addLocationChapter(h.ctx, "mountain", 2, 1), { chapter: "002", location: "mountain", source: "2:1", skipped: false });
+  assert.deepEqual(await Promise.all(tables.map((table) => h.db.all(`SELECT * FROM ${table}`))), old);
+  const location = JSON.parse((await h.db.get<{ spec: string }>("SELECT spec FROM locations WHERE id = 'mountain'"))!.spec);
+  assert.deepEqual(location, { ...bible.locations[0], chapters: [1, 2] });
+  assert.deepEqual(h.json.get("bible/locations.json"), [location]);
+  assert.deepEqual(await addLocationChapter(h.ctx, "mountain", 2, 1), { chapter: "002", location: "mountain", source: "2:1", skipped: true });
+  const saved = await h.db.all("SELECT * FROM locations");
+  for (const [target, paragraph] of [["unknown", 1], ["mountain", 0], ["mountain", 2]] as const) await assert.rejects(addLocationChapter(h.ctx, target, 2, paragraph), PreconditionError);
+  assert.deepEqual(await h.db.all("SELECT * FROM locations"), saved);
+  assert.equal(h.calls.length, 0);
+  assert.equal((await h.ledger.all("SELECT * FROM spend")).length, 0);
 });
 
 test("outfit chapter association rejects unknown targets and invalid source paragraphs before writing", async (t) => {

@@ -7,7 +7,7 @@ import { loadConfig } from "../adapters/config.js";
 import { LocalTemplateStore } from "../adapters/templates.js";
 import { budgetReport } from "../core/budget.js";
 import { createProject, importNovel } from "../core/project.js";
-import { addOutfitChapter, prepareBook } from "../core/steps/prepare.js";
+import { addLocationChapter, addOutfitChapter, prepareBook } from "../core/steps/prepare.js";
 import { generateRefs, lockRef } from "../core/steps/refs.js";
 import { adaptChapter, patchStoryboard } from "../core/steps/adapt.js";
 import { redoPage, renderChapter } from "../core/steps/render.js";
@@ -65,6 +65,8 @@ action(program.command("import").requiredOption("--novel <path>"), true, async (
 action(program.command("prepare"), true, async (_, flags, __, ctx) => prepareBook(ctx!, { force: flags.force }));
 const outfits = program.command("outfits");
 action(outfits.command("include <outfit_id>").requiredOption("--chapter <n>").requiredOption("--paragraph <n>"), true, async ([id], flags, __, ctx) => addOutfitChapter(ctx!, id, flags.chapter!, flags.paragraph!));
+const locations = program.command("locations");
+action(locations.command("include <location_id>").requiredOption("--chapter <n>").requiredOption("--paragraph <n>"), true, async ([id], flags, __, ctx) => addLocationChapter(ctx!, id, flags.chapter!, flags.paragraph!));
 
 const refs = program.command("refs");
 action(refs.command("gen").requiredOption("--kind <kind>").option("--target <id>"), true, async (_, flags, __, ctx) => {
