@@ -16,6 +16,9 @@ test("operator skill metadata, safety rules and three evaluation cases are valid
   assert.match(text, /budget/);
   assert.match(text, /--ignore-limit/);
   assert.match(text, /project\.db/);
+  assert.match(text, /默认由代理检查候选/);
+  assert.match(text, /仅在用户主动要求自行选图或禁止代选时等待用户选择/);
+  assert.match(text, /不得解除、修改、删除或替换 locked 参考图/);
   const evaluations = JSON.parse(await readFile(new URL("../skills/comic/evals/evals.json", import.meta.url), "utf8"));
   assert.equal(evaluations.skill_name, "comic");
   assert.equal(evaluations.evals.length, 3);

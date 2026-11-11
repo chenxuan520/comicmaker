@@ -1,6 +1,6 @@
 # 页间 · comicmaker
 
-**页间（comicmaker）**是本地小说转彩色漫画工作室，支持页漫与手机条漫：一本小说一个项目，提取设定、人工锁定参考图，再逐章改编、分镜、生图、审查与重抽，导出 PDF 和本地 HTML 阅读页。默认页漫模式，一张图生成一页或一个四格组，中文对白直接画进图里，不做程序叠字。
+**页间（comicmaker）**是本地小说转彩色漫画工作室，支持页漫与手机条漫：一本小说一个项目，提取设定、选定并锁定参考图，再逐章改编、分镜、生图、审查与重抽，导出 PDF 和本地 HTML 阅读页。默认页漫模式，一张图生成一页或一个四格组，中文对白直接画进图里，不做程序叠字。
 
 提供 CLI 和本地 Web UI，支持默认关闭的外部 ImgBed 上传；不做云端部署、多用户或多个项目同时制作。本地指存储与编排在本机，模型调用仍会把相关原文、提示词和参考图发送给配置的服务商；图床只在明确开启后上传最终阅读图。
 
@@ -45,7 +45,7 @@ OPENAI_API_KEY=your-provider-api-key
 | --- | --- |
 | 作品书架 / 工作台 | 新建项目、选择项目、上传 `.txt` / `.md` 小说、全书预处理 |
 | 配置 / 提示词 | 编辑工作区或项目 YAML、查看合并值及来源；浏览模板并保存为项目覆盖 |
-| 视觉设定 | 生成、浏览候选，先由人选择并锁定画风，再锁定服装与地点 |
+| 视觉设定 | 生成、浏览候选，先选择并锁定画风，再锁定服装与地点 |
 | 章节稿台 | 运行章节、逐页浏览、查看分镜与审查、筛选 flagged、带说明重绘、导出 PDF / HTML、可选上传阅读图及打开图床链接 |
 | 预算 / 任务 | 查看账本分类、任务进度与日志、取消当前任务 |
 
@@ -144,7 +144,7 @@ pnpm comic prepare
 
 ### 生成与锁定参考图
 
-先看预算与设定，生成画风候选并等待人工选择：
+先看预算与设定，生成画风候选并选图。默认由代理检查候选并通过 CLI 锁定；仅在用户主动要求自行选图或禁止代选时等待其选择：
 
 ```sh
 pnpm comic budget
@@ -153,7 +153,7 @@ pnpm comic refs list --status candidate
 pnpm comic lock STYLE_REF_ID
 ```
 
-`STYLE_REF_ID` 等大写占位符必须换成人工选中的真实 ID。画风锁定后，为本章需要的服装和地点生成候选、逐项选图锁定；目标 ID 从 `status` 的 `outfits` / `locations` 获取：
+`STYLE_REF_ID` 等大写占位符必须换成代理检查后或用户主动选中的真实候选 ID。画风锁定后，为本章需要的服装和地点生成候选、逐项选图锁定；目标 ID 从 `status` 的 `outfits` / `locations` 获取：
 
 ```sh
 pnpm comic refs gen --kind outfit --target OUTFIT_ID
@@ -175,7 +175,7 @@ pnpm comic run --chapter 1
 pnpm comic status --chapter 1 --json
 ```
 
-`run` 只执行 `adapt → render → export`，不会代做导入、预处理或人工锁定；已完成步骤默认跳过。中断后先查 `status` 和 `budget`，再以相同项目、章节的 `run` / `render` **不加 `--force`** 续跑。flagged 表示未通过全部审查，不等于命令失败；有图时选择本轮最佳版本，无可用图时导出对白文字页。
+`run` 只执行 `adapt → render → export`，不会代做导入、预处理或参考图锁定；已完成步骤默认跳过。中断后先查 `status` 和 `budget`，再以相同项目、章节的 `run` / `render` **不加 `--force`** 续跑。flagged 表示未通过全部审查，不等于命令失败；有图时选择本轮最佳版本，无可用图时导出对白文字页。
 
 单页重做先读预算和已有审查，`--note` 写具体修正依据，不能编造错误。以下页码与说明仅示意，以实际 `status` 为准：
 
@@ -225,7 +225,7 @@ pnpm comic export -p demo-book --chapter 1 --force
 | `import` | `--novel <path>`，可选 `--force` | 复制原稿并切章 |
 | `prepare` | 可选 `--force` | 提取设定、生成摘要 |
 | `refs gen` | `--kind style\|outfit\|location`，可选 `--target <id>`、`--force` | 生成候选 |
-| `refs list` / `lock <ref_id>` | list 可选 `--status candidate\|locked\|rejected` | 列素材 / 锁定人选定的图 |
+| `refs list` / `lock <ref_id>` | list 可选 `--status candidate\|locked\|rejected` | 列素材 / 锁定选定的图 |
 | `adapt` / `render` | `--chapter <n>` 必填，可选 `--force` | 改编、分镜与自审 / 生图、审查与重抽 |
 | `redo` | `--page <page_id>` 必填，`--note <说明>` 可选 | 重做一页 |
 | `export` | `--chapter <n>` 必填，可选 `--force` | 导出 / 更新 PDF 与 HTML |

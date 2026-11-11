@@ -28,7 +28,7 @@ pnpm build
 - API key 只放工作区 `.env` 或进程环境，不写入 YAML、提示词、文档或日志。不要输出密钥值；示例仅用占位值。
 - 不提交真实 token、`.env`、`workspace/`（或外部工作区）、`dist/`、`node_modules/`、私人小说原稿，以及生成的 PNG、PDF、SQLite 数据库和日志。
 - `project.db` 是项目状态权威，`ledger.db` 是费用账本，JSON 是镜像。产品操作走 CLI/Web，不手改用户数据库或镜像绕过状态。
-- `refs/` 与 `chapters/*/attempts/` 的原图是 immutable originals，只追加、不覆盖、不删除，包含 rejected 候选。锁定必须由人选择，不能自动锁定、替换或解除；`--force` 不解除锁定、不清空历史。重做仅更新确定后的最终 `pages/` 副本和派生导出。
+- `refs/` 与 `chapters/*/attempts/` 的原图是 immutable originals，只追加、不覆盖、不删除，包含 rejected 候选。默认由代理检查、选择候选并通过 CLI 锁定；仅在用户主动要求自行选图或禁止代选时等待用户选择。既有锁定不能替换或解除；`--force` 不解除锁定、不清空历史。重做仅更新确定后的最终 `pages/` 副本和派生导出。
 - 收费调用必须经过账本预占、结算和工作区/项目预算检查；不得关闭记账或自动绕过预算。`--ignore-limit` 仅在用户明确批准本次调用时使用；超时或取消后费用未知的请求保留估算。
 
 ## 本地服务与资源

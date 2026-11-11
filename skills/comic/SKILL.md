@@ -1,6 +1,6 @@
 ---
 name: comic
-description: 操作 comicmaker 本地小说转漫画 CLI 时使用，包括项目与章节运行、参考图候选和人工锁定、flagged 页诊断与带说明重做、预算闸处理、配置及提示词模板查看与预览；不用于普通漫画剧情创作、通用画图或无关项目。
+description: 操作 comicmaker 本地小说转漫画 CLI 时使用，包括项目与章节运行、参考图候选、代理选图与锁定、flagged 页诊断与带说明重做、预算闸处理、配置及提示词模板查看与预览；不用于普通漫画剧情创作、通用画图或无关项目。
 ---
 
 # comic CLI 操作员
@@ -11,7 +11,7 @@ description: 操作 comicmaker 本地小说转漫画 CLI 时使用，包括项�
 
 - 项目制作与状态变更只通过 CLI，不直接调用 HTTP API，不编辑 project.db、ledger.db、小说原稿、JSON 镜像或图片文件；数据库权威，镜像只供查看。
 - 所有 attempts / refs 原图只增不改，不覆盖或删除；不得解除、修改、删除或替换 locked 参考图，即使用户要求 force 也不能用它绕过锁定。
-- 人选择参考图：只列出候选 ID、target、路径和现有状态，等待用户明确指定 ref_id；不随机选择、按第一张自动 lock 或为“跑通”代选。
+- 默认由代理检查候选与设定的符合程度，记录选择依据，再通过 CLI 锁定选定的 ref_id；仅在用户主动要求自行选图或禁止代选时等待用户选择。不随机选择，也不为“跑通”忽略明显错误。
 - **每次 redo 前先读 budget**，再查目标 status、分镜与 reviews；根据已有证据写具体 --note，不捏造错误、页 ID、颜色或审查结果。
 - 没有用户对本次绕过限额的明确批准，不加 --ignore-limit、不改预算上限、不清账本；退出码3停止并报告，不继续付费重试。
 - 用户明确请求重做或生成候选、且服务配置已具备时，可执行该范围内的收费操作，不额外要求每次二次批准；缺密钥或模型配置则报告缺项，不自行补密钥或挑未核实模型。
@@ -50,7 +50,7 @@ description: 操作 comicmaker 本地小说转漫画 CLI 时使用，包括项�
 | `prepare` | 可选 `--force` | 提取角色 / 服装 / 地点与摘要；收费，已有结果默认跳过 |
 | `refs gen` | 必填 `--kind style\|outfit\|location`，可选 `--target <id>`、`--force` | 生成候选；省略 target 为该类未锁定项补齐，force 仅追加；服装 / 地点需 prepare 和已锁定画风 |
 | `refs list` | 可选 `--status candidate\|locked\|rejected` | 返回 refs 数组，包含 ID、类型、target、路径、sha256、prompt、状态 |
-| `lock <ref_id>` | 无 | 锁定用户明确选中的 candidate，同一 kind / target 已有 locked 时不能替换 |
+| `lock <ref_id>` | 无 | 锁定代理检查后选中的 candidate；用户主动要求自行选图时遵从其选择，同一 kind / target 已有 locked 时不能替换 |
 | `adapt` | 必填 `--chapter <n>`，可选 `--force` | 场景、分镜与自审，先检查所需锁定图；force 设置新的 render.start.* 基线，保留旧 attempts |
 | `render` | 必填 `--chapter <n>`，可选 `--force` | 按已有分镜生图、审查、自动重抽；force 为该章页开启新周期 |
 | `redo` | 必填 `--page <page_id>`，可选 `--note <文本>` | 开启新审查周期，note 追加修正；仍受本轮 max_attempts 与预算约束 |
@@ -109,11 +109,11 @@ pnpm comic budget -p qinglan --json
 
 遇到1 / 2 / 3 / 130先报告并处理，不继续当作成功导出；3不加 ignore-limit。账本差额可能含估算，无可确认的费用数据就报告未知，不能编造金额。
 
-### 新角色候选，不自动锁定
+### 新角色候选与代理选图
 
 1. 查 budget、status、config，从现有 characters / outfits 找到角色与实际 outfit_id；目标已 locked 就报告并保留，不 force 另选。
 2. 确认已 prepare 且画风已 locked；若未提取该角色，报告需要重新导入 / prepare 的原因，不直接插入数据库，扩大为全书 force 前先确认用户意图。
-3. 对目标运行 refs gen，再 refs list；只报告该目标候选 ID、路径、状态，等待人选择。若画风未锁定，只列已有画风候选或按用户授权生成画风候选，不代选 lock。
+3. 对目标运行 refs gen，再 refs list；默认检查并锁定合适候选，用户主动要求自行选图或禁止代选时才报告 ID、路径、状态并等待。画风候选遵循同一规则，不替换已有锁定。
 
 ```sh
 pnpm comic budget --json
@@ -123,7 +123,7 @@ pnpm comic refs gen -p qinglan --kind outfit --target OUTFIT_ID --json
 pnpm comic refs list -p qinglan --status candidate --json
 ```
 
-`OUTFIT_ID` 必须来自现有设定，不能把示例 ID 当真；地点候选同理使用 --kind location。只有用户明确选出 ref_id 后才执行 `pnpm comic lock -p qinglan REF_ID --json`。
+`OUTFIT_ID` 必须来自现有设定，不能把示例 ID 当真；地点候选同理使用 --kind location。默认由代理检查并选定 ref_id 后，执行 `pnpm comic lock -p qinglan REF_ID --json`；用户主动要求自行选图或禁止代选时遵从其选择。
 
 ### 整章重跑与 flagged 检查
 

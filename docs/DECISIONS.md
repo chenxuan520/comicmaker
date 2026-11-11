@@ -18,7 +18,7 @@
 - 配置与模板：配置按仓库、工作区、项目深度覆盖，数组替换；提示词同三层整文件覆盖，strict Handlebars 渲染，eject 复制当前生效版本。
 - 可选图床：export.imgbed 默认关闭，支持工作区开启与项目覆盖；只在导出时上传选定的最终阅读 JPEG（reading_image_kb=null 时为 PNG），包括 flagged 最终图，不上传参考图、原文或历史候选，不因存在密钥自动开启。
 - 图床恢复：复用 ImgBed multipart 上传协议，不自动重试未知完成状态；成功链接立即保存在 project.db，缓存绑定地址、阅读参数、选定尝试与内容哈希，失败保留已上传页供再次导出续传。公网链接单独提供，本地阅读、HTML/PDF 和 immutable originals 不依赖图床，也不自动部署或发布阅读页。
-- 锁定：每个 (kind,target_id) 最多一张 locked，必须由人指定候选；已锁定图不能替换，force 不能解除锁定，rejected 原图也保留。
+- 锁定：每个 (kind,target_id) 最多一张 locked；默认由代理检查候选并通过 CLI 锁定，仅在用户主动要求自行选图或禁止代选时等待其选择。已锁定图不能替换，force 不能解除锁定，rejected 原图也保留。
 - 强制改编：重建当前章分镜时设置 render.start.* 历史序号基线，保留旧 attempts，不让旧尝试消耗新一轮次数。
 - 手动重做：redo 开启新的配置审查周期，不受历史 max_attempts 用量限制；本轮仍遵守 max_attempts、拒绝处理与预算闸，更新 PDF 时使用 export --force。
 - 预算闸：默认 limit_usd=null 但始终记账，工作区与项目显式限额都检查；退出码3停止报告，ignore-limit 仅允许用户明确批准的本次调用。
