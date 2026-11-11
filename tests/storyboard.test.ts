@@ -346,6 +346,19 @@ test("later chapters receive the preceding chapter summary", async (t) => {
   assert.ok(h.json.has("chapters/002/storyboard.json"));
 });
 
+test("storyboard review receives chapter-relevant settings and preceding context", async (t) => {
+  const bible = makeBible(["hero", "absent"]);
+  bible.characters[0].marks = "An established old hand injury";
+  bible.outfits[1].chapters = [3];
+  const h = await harness(t, [makeAdaptation(), { pages: [makePage()] }, pass], bible);
+  await h.db.run("INSERT INTO chapters (id, idx, title, text, summary, status) VALUES ('002', 2, 'Chapter two', 'hero enters Mountain.', 'Second summary', 'imported')");
+  await adaptChapter(h.ctx, 2);
+  const review = JSON.parse(h.calls.find((call) => call.schema_name === "storyboard_review")!.user);
+  assert.equal(review.prev_summary, "Chapter summary");
+  assert.deepEqual(review.characters, [bible.characters[0]]);
+  assert.deepEqual(review.outfits, [bible.outfits[0]]);
+});
+
 for (const key of ["prepare.extract.completed", "prepare.summary.completed"]) {
   test(`adaptation requires ${key}`, async (t) => {
     const h = await harness(t);
@@ -847,6 +860,9 @@ test("default prompts require identity cards and explicit spatial and temporal t
   assert.ok(system.includes("没有依据不编"));
   assert.ok(user.includes("first_appearance_characters"));
   assert.ok(review.includes("姓名或称呼与当前已知身份"));
+  assert.ok(review.includes("跨章延续"));
+  assert.ok(review.includes("每个受影响页分别"));
+  assert.ok(system.includes("同页未涉及问题的画格"));
   assert.ok(image.includes("character-introduction box BESIDE"));
   assert.ok(image.includes("Character names may appear ONLY"));
   assert.ok(ocr.includes("同一气泡或介绍/旁白框内部的换行合并"));

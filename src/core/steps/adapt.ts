@@ -199,7 +199,7 @@ export async function adaptChapter(ctx: Context, chapterNumber: number | string,
     forceFull = false;
     review = pendingIssues ? { pass: false, issues: pendingIssues } : await structuredCall(ctx, {
       step: "storyboard_review", template: "storyboard_review", model: ctx.config.models.storyboard_review, schema: storyboardReviewSchema,
-      data: { chapter: data, scenes, storyboard: { pages }, first_appearance_characters: introductions },
+      data: { ...templateData, scenes, storyboard: { pages } },
     });
     pendingIssues = undefined;
     if (review.pass) break;

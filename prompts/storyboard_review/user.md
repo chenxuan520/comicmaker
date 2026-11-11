@@ -7,6 +7,13 @@
 【本章首次正式出场候选】
 {{json first_appearance_characters}}
 
+【前章摘要】
+{{prev_summary}}
+
+【本章相关人物与服装设定】
+{{json characters}}
+{{json outfits}}
+
 【场景与节拍】
 {{json scenes}}
 
