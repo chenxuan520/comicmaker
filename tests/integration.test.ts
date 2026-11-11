@@ -406,6 +406,21 @@ test("CLI real-SDK workflow exports valid files, accounts exact usage, skips rer
   }
   assert.deepEqual(counts, { "gpt-6.1-sol": 4, "gpt-6.1-terra": 5, "gpt-image-2.6-sunburst": 5 });
   assert.ok(Math.abs((await cli<BudgetReport>(f.root, ["--json", "budget"])).spent_usd - 0.01115) < 1e-12);
+
+  const replacement = structuredClone(storyboard);
+  replacement.panels[0].dialogue.push({ speaker: null, type: "narration", text: "林青：青岚峰弟子" });
+  const patchFile = join(f.root, "storyboard-patch.json");
+  await writeFile(patchFile, JSON.stringify({ pages: [{ ...replacement, page_no: 2 }] }));
+  await cli(f.root, ["storyboard", "patch", "--chapter", "1", "--file", patchFile, "--json"], 2);
+  await writeFile(patchFile, JSON.stringify({ pages: [replacement] }));
+  assert.deepEqual(await cli(f.root, ["storyboard", "patch", "--chapter", "1", "--file", patchFile, "-p", "book", "--json"]), { chapter: "001", updated: ["001-p01"], review_required: true, skipped: false });
+  assert.equal(f.mock.requests.length, 14);
+  assert.deepEqual((await cli<Status>(f.root, ["status", "--chapter", "1", "--json"])).pages[0].storyboard, replacement);
+  await cli(f.root, ["render", "--chapter", "1", "--json"], 2);
+  assert.equal(f.mock.requests.length, 14);
+  assert.deepEqual(await readFile(join(projectRoot, "chapters/001/attempts/p01-a1.png")), original);
+  const preview = await cli<{ prompt: { text: string } }>(f.root, ["prompts", "render", "image", "--page", "001-p01", "--json"]);
+  assert.ok(preview.prompt.text.includes("林青：青岚峰弟子"));
 });
 
 test("backend project/config/prompt/import APIs validate before writing and reject rebinding and private paths", { timeout: 30_000 }, async (t) => {

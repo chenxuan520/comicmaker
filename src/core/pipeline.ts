@@ -1,4 +1,4 @@
-import { getBible, getChapter, getPage, chapterData, entitiesForChapter } from "./data.js";
+import { getBible, getChapter, getPage, chapterData, entitiesForChapter, firstAppearanceCharacters } from "./data.js";
 import { PreconditionError } from "./errors.js";
 import { buildPagePrompt } from "./promptBuilder.js";
 import { visualRefs } from "./review.js";
@@ -35,6 +35,7 @@ export async function renderStepPrompt(ctx: Context, step: string, options: { ch
   const data = {
     chapters: chapters.map(chapterData), chapter: chapter ? chapterData(chapter) : null,
     prev_summary: previous, ...entities, scenes: adaptation ? JSON.parse(adaptation.scenes) : [],
+    first_appearance_characters: chapter ? await firstAppearanceCharacters(ctx, chapter, entities) : [],
     review_issues: [], storyboard: { pages: pages.map((item) => JSON.parse(item.storyboard)) },
     page, panel_count: page?.panels.length ?? 0, layout: page?.layout ?? "", refs: page && step === "review_visual" ? await visualRefs(ctx, page) : [],
     character, outfit, location, corrections: "", text_errors: [], extractions: [],

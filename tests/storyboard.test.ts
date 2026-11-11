@@ -9,8 +9,9 @@ import { entitiesForChapter } from "../src/core/data.js";
 import { ComicError, PreconditionError } from "../src/core/errors.js";
 import type { AiProvider, LogLevel, ProjectFs, StructuredRequest, TemplateStore } from "../src/core/ports.js";
 import { PromptEngine } from "../src/core/prompts.js";
+import { renderStepPrompt } from "../src/core/pipeline.js";
 import { getStatus } from "../src/core/status.js";
-import { adaptChapter, saveStoryboard } from "../src/core/steps/adapt.js";
+import { adaptChapter, patchStoryboard, saveStoryboard } from "../src/core/steps/adapt.js";
 import { exportChapter } from "../src/core/steps/export.js";
 import { redoPage, renderChapter } from "../src/core/steps/render.js";
 import { countChineseCharacters, validateStoryboard } from "../src/core/storyboardCheck.js";
@@ -711,6 +712,118 @@ test("saving identical handwritten pages preserves their final and retry epoch u
   assert.equal(forced!.final_attempt_id, null);
   assert.equal((await h.db.get<{ value: string }>("SELECT value FROM meta WHERE key = 'render.start.001-p01'"))!.value, "5");
   assert.equal(await h.db.get("SELECT value FROM meta WHERE key = 'render.note.001-p01'"), undefined);
+});
+
+test("default prompts require identity cards and explicit spatial and temporal transitions as audited text", async () => {
+  const load = (name: string) => readFile(new URL(`../prompts/${name}`, import.meta.url), "utf8");
+  const [system, user, review, image, ocr] = await Promise.all([
+    load("storyboard/system.md"), load("storyboard/user.md"), load("storyboard_review/system.md"), load("image/text_rules.md"), load("review_text/system.md"),
+  ]);
+  assert.ok(system.includes("姓名/称呼＋当前身份"));
+  assert.ok(system.includes("type=narration"));
+  assert.ok(system.includes("多少年后"));
+  assert.ok(system.includes("空间切换要标清"));
+  assert.ok(system.includes("没有依据不编"));
+  assert.ok(user.includes("first_appearance_characters"));
+  assert.ok(review.includes("姓名或称呼与当前已知身份"));
+  assert.ok(image.includes("character-introduction box BESIDE"));
+  assert.ok(image.includes("Character names may appear ONLY"));
+  assert.ok(ocr.includes("同一气泡或介绍/旁白框内部的换行合并"));
+});
+
+test("character introduction context excludes earlier visible people, not locked reference candidates", async (t) => {
+  const bible = makeBible(["hero", "ally"]);
+  const secondAdaptation = makeAdaptation();
+  secondAdaptation.scenes[0].characters.push({ id: "ally", outfit: "ally.daily" });
+  const secondPage = makePage();
+  secondPage.panels[0].characters.push({ id: "ally", outfit: "ally.daily", pose: "standing", expression: "neutral", position: "右" });
+  const h = await harness(t, [makeAdaptation(), { pages: [makePage()] }, pass, secondAdaptation, { pages: [secondPage] }, pass], bible);
+  await adaptChapter(h.ctx, 1);
+  await h.db.run("INSERT INTO chapters (id, idx, title, text, summary, status) VALUES ('002', 2, 'Chapter two', 'hero meets ally in Mountain.', 'Meeting', 'imported')");
+  await adaptChapter(h.ctx, 2);
+  const storyboard = h.calls.filter((call) => call.schema_name === "storyboard").at(-1)!;
+  const review = h.calls.filter((call) => call.schema_name === "storyboard_review").at(-1)!;
+  const expected = [{ id: "ally", name: "ally", recurring: true }];
+  assert.deepEqual(JSON.parse(storyboard.user).first_appearance_characters, expected);
+  assert.deepEqual(JSON.parse(review.user).first_appearance_characters, expected);
+  const preview = await renderStepPrompt(h.ctx, "storyboard", { chapter: 2 }) as { user: string };
+  assert.deepEqual(JSON.parse(preview.user).first_appearance_characters, expected);
+});
+
+test("targeted storyboard patch adds an introduction without regenerating or touching other pages", async (t) => {
+  const pages = [makePage(1), makePage(2)];
+  const h = await harness(t, [makeAdaptation(), { pages }, pass, pass]);
+  await adaptChapter(h.ctx, 1);
+  await seedHistory(h, 1, 7);
+  await seedHistory(h, 2, 9);
+  await h.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('render.note.001-p02', 'Keep this note'), ('storyboard.revisions.001', '8'), ('storyboard.candidate.001', ?)", [JSON.stringify({ pages, revisions: 8 })]);
+  const untouched = await h.db.get<Page>("SELECT * FROM pages WHERE id = '001-p02'");
+  const attempts = await h.db.all("SELECT * FROM attempts ORDER BY id");
+  const reviews = await h.db.all("SELECT * FROM reviews ORDER BY id");
+  const refs = await h.db.all("SELECT * FROM refs ORDER BY id");
+  const images = [...h.bytes.entries()];
+  const calls = h.calls.length;
+  const replacement = structuredClone(pages[0]);
+  replacement.panels[0].dialogue.push({ speaker: null, type: "narration", text: "hero：山中弟子" });
+  assert.deepEqual(await patchStoryboard(h.ctx, 1, [replacement]), { chapter: "001", updated: ["001-p01"], review_required: true, skipped: false });
+  assert.equal(h.calls.length, calls);
+  assert.deepEqual(await h.db.get<Page>("SELECT * FROM pages WHERE id = '001-p02'"), untouched);
+  assert.equal((await h.db.get<{ value: string }>("SELECT value FROM meta WHERE key = 'render.start.001-p02'"))!.value, "0");
+  assert.equal((await h.db.get<{ value: string }>("SELECT value FROM meta WHERE key = 'render.note.001-p02'"))!.value, "Keep this note");
+  assert.equal((await h.db.get<{ value: string }>("SELECT value FROM meta WHERE key = 'render.start.001-p01'"))!.value, "7");
+  assert.equal((await h.db.get<Page>("SELECT * FROM pages WHERE id = '001-p01'"))!.status, "planned");
+  assert.equal(await h.db.get("SELECT value FROM meta WHERE key = 'storyboard.candidate.001'"), undefined);
+  assert.equal(await h.db.get("SELECT value FROM meta WHERE key = 'storyboard.revisions.001'"), undefined);
+  assert.deepEqual(await h.db.all("SELECT * FROM attempts ORDER BY id"), attempts);
+  assert.deepEqual(await h.db.all("SELECT * FROM reviews ORDER BY id"), reviews);
+  assert.deepEqual(await h.db.all("SELECT * FROM refs ORDER BY id"), refs);
+  assert.deepEqual([...h.bytes.entries()], images);
+  await assert.rejects(renderChapter(h.ctx, 1), PreconditionError);
+  await assert.rejects(exportChapter(h.ctx, 1), PreconditionError);
+  await adaptChapter(h.ctx, 1);
+  assert.equal(h.calls.length, calls + 1);
+  assert.equal(h.calls.at(-1)!.schema_name, "storyboard_review");
+  assert.deepEqual(JSON.parse(h.calls.at(-1)!.user).storyboard.pages, [replacement, pages[1]]);
+  assert.deepEqual(await h.db.get<Page>("SELECT * FROM pages WHERE id = '001-p02'"), untouched);
+});
+
+test("committed storyboard patch clears obsolete review candidates before a crash", async (t) => {
+  const original = makePage();
+  const revised = structuredClone(original);
+  revised.panels[0].dialogue.push({ speaker: null, type: "narration", text: "hero：山中弟子" });
+  const h = await harness(t, [makeAdaptation(), { pages: [original] }, pass, pass]);
+  await adaptChapter(h.ctx, 1);
+  await h.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('storyboard.candidate.001', ?), ('storyboard.revisions.001', '8')", [JSON.stringify({ pages: [original], revisions: 8 })]);
+  const transaction = h.db.transaction.bind(h.db);
+  let interrupt = true;
+  h.db.transaction = async (statements) => {
+    await transaction(statements);
+    if (interrupt && statements.some((statement) => statement.sql.startsWith("INSERT INTO pages"))) {
+      interrupt = false;
+      throw new Error("Interrupted after patch commit");
+    }
+  };
+  await assert.rejects(patchStoryboard(h.ctx, 1, [revised]), /after patch commit/);
+  assert.equal(await h.db.get("SELECT value FROM meta WHERE key = 'storyboard.candidate.001'"), undefined);
+  assert.equal(await h.db.get("SELECT value FROM meta WHERE key = 'storyboard.revisions.001'"), undefined);
+  await adaptChapter(h.ctx, 1);
+  assert.deepEqual(JSON.parse((await h.db.get<Page>("SELECT * FROM pages WHERE id = '001-p01'"))!.storyboard), revised);
+  assert.equal(h.calls.length, 4);
+});
+
+test("storyboard patch rejects unknown pages and invalid captions without changing saved progress", async (t) => {
+  const h = await harness(t, [makeAdaptation(), { pages: [makePage()] }, pass]);
+  await adaptChapter(h.ctx, 1);
+  await seedHistory(h, 1, 3);
+  const saved = await h.db.all("SELECT * FROM pages");
+  const meta = await h.db.all("SELECT * FROM meta ORDER BY key");
+  const invalid = makePage();
+  invalid.panels[0].dialogue.push({ speaker: null, type: "narration", text: "这是一段超出配置长度的人物身份介绍文字，不应该写入分镜。" });
+  for (const replacement of [makePage(2), invalid]) await assert.rejects(patchStoryboard(h.ctx, 1, [replacement]), PreconditionError);
+  assert.deepEqual(await h.db.all("SELECT * FROM pages"), saved);
+  assert.deepEqual(await h.db.all("SELECT * FROM meta ORDER BY key"), meta);
+  assert.equal(h.calls.length, 3);
+  assert.deepEqual(await patchStoryboard(h.ctx, 1, [makePage()]), { chapter: "001", updated: [], review_required: false, skipped: true });
 });
 
 test("new handwritten pages start after existing orphan attempt history", async (t) => {

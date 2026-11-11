@@ -2,6 +2,10 @@
 【本章】{{chapter.id}}，第 {{chapter.idx}} 章：{{chapter.title}}
 【画风】{{project.style_desc}}
 
+【尚未在前章画面中正式出场的角色】
+{{json first_appearance_characters}}
+名单中的主要及反复出场角色在本章实际露面时安排姓名/称呼与当前身份介绍；只被提及、只出现在画像或回忆中的人物不要误作现场新登场。
+
 【本章角色设定】
 {{json characters}}
 

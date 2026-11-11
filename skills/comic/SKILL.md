@@ -52,6 +52,7 @@ description: 操作 comicmaker 本地小说转漫画 CLI 时使用，包括项�
 | `refs list` | 可选 `--status candidate\|locked\|rejected` | 返回 refs 数组，包含 ID、类型、target、路径、sha256、prompt、状态 |
 | `lock <ref_id>` | 无 | 锁定代理检查后选中的 candidate；用户主动要求自行选图时遵从其选择，同一 kind / target 已有 locked 时不能替换 |
 | `adapt` | 必填 `--chapter <n>`，可选 `--force` | 场景、分镜与自审，先检查所需锁定图；force 设置新的 render.start.* 基线，保留旧 attempts |
+| `storyboard patch` | 必填 `--chapter <n>`、`--file <JSON路径>` | 只替换文件中指定的既有页；文件为 `{ "pages": [...] }`，通过程序校验后使这些页待审，原图和未涉及页保留；本身不调用模型 |
 | `render` | 必填 `--chapter <n>`，可选 `--force` | 按已有分镜生图、审查、自动重抽；force 为该章页开启新周期 |
 | `redo` | 必填 `--page <page_id>`，可选 `--note <文本>` | 开启新审查周期，note 追加修正；仍受本轮 max_attempts 与预算约束 |
 | `export` | 必填 `--chapter <n>`，可选 `--force` | 本地 PDF / HTML；重做后用 force 更新，不调用模型 |
@@ -124,6 +125,10 @@ pnpm comic refs list -p qinglan --status candidate --json
 ```
 
 `OUTFIT_ID` 必须来自现有设定，不能把示例 ID 当真；地点候选同理使用 --kind location。默认由代理检查并选定 ref_id 后，执行 `pnpm comic lock -p qinglan REF_ID --json`；用户主动要求自行选图或禁止代选时遵从其选择。
+
+### 补人物介绍与时地字幕
+
+姓名/称呼、当前身份、地点与原文明示的时间跳跃写入分镜的 `narration`，不能直接在成图上补分镜外文字；未知信息不编造，后期身份不提前透露。把需要替换的完整既有页对象放进 `{ "pages": [...] }` 文件，运行 `storyboard patch --chapter N --file PATH`，再用不带 force 的 `adapt` 复用场景并重新审核，最后 `render` 和 `export --force`。patch 本身不收费，审核/修订和生图计费；只影响指定页，未涉及的选图和全部原图保留。不要在 patch 后立即 redo 重开周期，先通过分镜审核。
 
 ### 整章重跑与 flagged 检查
 

@@ -1,5 +1,5 @@
 import { adaptationSchema, storyboardSchema, storyboardReviewSchema, type Scene, type PageStoryboard, type StoryboardIssue } from "../../../schemas/index.js";
-import { getChapter, getBible, entitiesForChapter, chapterData, requireLocked } from "../data.js";
+import { getChapter, getBible, entitiesForChapter, chapterData, requireLocked, requireStoryboardReady, firstAppearanceCharacters } from "../data.js";
 import { ComicError, PreconditionError } from "../errors.js";
 import { structuredCall } from "../llm.js";
 import type { SqlStatement } from "../ports.js";
@@ -8,7 +8,7 @@ import type { Context, Page, Ref } from "../types.js";
 
 interface ReviewState { completed: boolean; passed: boolean; issues: StoryboardIssue[] }
 
-export async function saveStoryboard(ctx: Context, chapterId: string, pages: PageStoryboard[], options: { force?: boolean } = {}): Promise<void> {
+export async function saveStoryboard(ctx: Context, chapterId: string, pages: PageStoryboard[], options: { force?: boolean; resetReviewProgress?: boolean } = {}): Promise<void> {
   const chapter = await getChapter(ctx, chapterId);
   const parsed = storyboardSchema.parse({ pages }).pages;
   if (!parsed.length) throw new ComicError("A chapter storyboard must contain at least one page");
@@ -41,9 +41,37 @@ export async function saveStoryboard(ctx: Context, chapterId: string, pages: Pag
     }
   }
   if (statements.length) {
+    if (options.resetReviewProgress) statements.push(
+      { sql: "UPDATE chapters SET status = 'storyboarded' WHERE id = ?", params: [chapter.id] },
+      { sql: "DELETE FROM meta WHERE key = ?", params: [`storyboard.candidate.${chapter.id}`] },
+      { sql: "DELETE FROM meta WHERE key = ?", params: [`storyboard.revisions.${chapter.id}`] },
+    );
     statements.push({ sql: "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params: [`storyboard.review.${chapter.id}`, JSON.stringify({ completed: false, passed: false, issues: [] })] });
     await ctx.db.transaction(statements);
   }
+}
+
+export async function patchStoryboard(ctx: Context, chapterNumber: number | string, updates: PageStoryboard[]) {
+  const chapter = await getChapter(ctx, chapterNumber);
+  const adaptation = await ctx.db.get<{ scenes: string }>("SELECT scenes FROM adaptations WHERE chapter_id = ?", [chapter.id]);
+  if (!adaptation) throw new PreconditionError("Adapt the chapter before patching its storyboard");
+  await requireStoryboardReady(ctx, chapter.id);
+  const replacements = storyboardSchema.parse({ pages: updates }).pages;
+  const stored = await ctx.db.all<Page>("SELECT * FROM pages WHERE chapter_id = ? ORDER BY page_no", [chapter.id]);
+  const existing = new Set(stored.map((page) => page.page_no));
+  if (new Set(replacements.map((page) => page.page_no)).size !== replacements.length) throw new PreconditionError("Storyboard patch contains duplicate page numbers");
+  const unknown = replacements.filter((page) => !existing.has(page.page_no)).map((page) => page.page_no);
+  if (unknown.length) throw new PreconditionError("Storyboard patch can only replace existing pages", { unknown_pages: unknown });
+  const pages = stored.map((row) => replacements.find((page) => page.page_no === row.page_no) ?? storyboardSchema.parse({ pages: [JSON.parse(row.storyboard)] }).pages[0]);
+  const bible = await getBible(ctx);
+  const refs = await ctx.db.all<Ref>("SELECT * FROM refs WHERE status = 'locked'");
+  const issues = validateStoryboard(pages, JSON.parse(adaptation.scenes), entitiesForChapter(bible, chapter), refs, ctx.config);
+  if (issues.length) throw new PreconditionError("Storyboard patch failed validation", { issues });
+  const updated = stored.filter((row, index) => JSON.stringify(storyboardSchema.parse({ pages: [JSON.parse(row.storyboard)] }).pages[0]) !== JSON.stringify(pages[index])).map((row) => row.id);
+  if (!updated.length) return { chapter: chapter.id, updated, review_required: false, skipped: true };
+  await saveStoryboard(ctx, chapter.id, pages, { resetReviewProgress: true });
+  await ctx.fs.writeJson(`chapters/${chapter.id}/storyboard.json`, { pages });
+  return { chapter: chapter.id, updated, review_required: true, skipped: false };
 }
 
 function mergeRevision(pages: PageStoryboard[], replacements: PageStoryboard[], issues: StoryboardIssue[], allowNewPages: boolean): PageStoryboard[] {
@@ -84,7 +112,8 @@ export async function adaptChapter(ctx: Context, chapterNumber: number | string,
   await requireLocked(ctx, entities.outfits.map((outfit) => outfit.id), entities.locations.map((location) => location.id));
   const refs = await ctx.db.all<Ref>("SELECT * FROM refs WHERE status = 'locked'");
   const previous = chapter.idx === 1 ? undefined : await ctx.db.get<{ summary: string | null }>("SELECT summary FROM chapters WHERE idx = ?", [chapter.idx - 1]);
-  const templateData = { chapter: data, prev_summary: previous?.summary ?? "", ...entities };
+  const introductions = await firstAppearanceCharacters(ctx, chapter, entities);
+  const templateData = { chapter: data, prev_summary: previous?.summary ?? "", ...entities, first_appearance_characters: introductions };
   const stored = await ctx.db.get<{ scenes: string; version: number }>("SELECT scenes, version FROM adaptations WHERE chapter_id = ?", [chapter.id]);
   const generateScenes = Boolean(options.force) || !stored || chapter.status === "imported";
   const adaptation = generateScenes ? await structuredCall(ctx, {
@@ -170,7 +199,7 @@ export async function adaptChapter(ctx: Context, chapterNumber: number | string,
     forceFull = false;
     review = pendingIssues ? { pass: false, issues: pendingIssues } : await structuredCall(ctx, {
       step: "storyboard_review", template: "storyboard_review", model: ctx.config.models.storyboard_review, schema: storyboardReviewSchema,
-      data: { chapter: data, scenes, storyboard: { pages } },
+      data: { chapter: data, scenes, storyboard: { pages }, first_appearance_characters: introductions },
     });
     pendingIssues = undefined;
     if (review.pass) break;

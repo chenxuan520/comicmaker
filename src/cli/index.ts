@@ -9,7 +9,7 @@ import { budgetReport } from "../core/budget.js";
 import { createProject, importNovel } from "../core/project.js";
 import { prepareBook } from "../core/steps/prepare.js";
 import { generateRefs, lockRef } from "../core/steps/refs.js";
-import { adaptChapter } from "../core/steps/adapt.js";
+import { adaptChapter, patchStoryboard } from "../core/steps/adapt.js";
 import { redoPage, renderChapter } from "../core/steps/render.js";
 import { exportChapter } from "../core/steps/export.js";
 import { dryRunChapter, renderStepPrompt, runChapter } from "../core/pipeline.js";
@@ -22,7 +22,7 @@ interface Flags {
   projectId?: string; json?: boolean; force?: boolean; ignoreLimit?: boolean;
   title?: string; style?: string; novel?: string; chapter?: string; page?: string;
   kind?: string; target?: string; status?: string; note?: string; workspace?: boolean;
-  project?: boolean; dryRun?: boolean; host?: string; port?: string;
+  project?: boolean; dryRun?: boolean; host?: string; port?: string; file?: string;
 }
 
 const program = new Command().name("comic").description("Local AI novel-to-comic studio").version("0.1.0")
@@ -72,6 +72,8 @@ action(refs.command("gen").requiredOption("--kind <kind>").option("--target <id>
 action(refs.command("list").option("--status <status>"), true, async (_, flags, __, ctx) => ({ refs: await ctx!.db.all(`SELECT * FROM refs WHERE path IS NOT NULL ${flags.status ? "AND status = ?" : ""} ORDER BY kind, target_id, id`, flags.status ? [flags.status] : []) }));
 action(program.command("lock <ref_id>"), true, async ([id], _, __, ctx) => lockRef(ctx!, id));
 action(program.command("adapt").requiredOption("--chapter <n>"), true, async (_, flags, __, ctx) => adaptChapter(ctx!, flags.chapter!, { force: flags.force }));
+const storyboard = program.command("storyboard");
+action(storyboard.command("patch").requiredOption("--chapter <n>").requiredOption("--file <path>"), true, async (_, flags, __, ctx) => patchStoryboard(ctx!, flags.chapter!, JSON.parse(await readFile(resolve(flags.file!), "utf8")).pages));
 action(program.command("render").requiredOption("--chapter <n>"), true, async (_, flags, __, ctx) => renderChapter(ctx!, flags.chapter!, { force: flags.force }));
 action(program.command("redo").requiredOption("--page <id>").option("--note <text>"), true, async (_, flags, __, ctx) => redoPage(ctx!, flags.page!, flags.note));
 action(program.command("export").requiredOption("--chapter <n>"), true, async (_, flags, workspace, ctx) => exportChapter(ctx!, flags.chapter!, { force: flags.force, font: await exportFont(ctx!, workspace.root) }));

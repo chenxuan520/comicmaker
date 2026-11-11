@@ -1,4 +1,4 @@
-import type { Bible, Chapter, Context, Page } from "./types.js";
+import type { Bible, Chapter, Context, Page, PageStoryboard } from "./types.js";
 import { chapterId, paragraphs } from "./types.js";
 import { PreconditionError } from "./errors.js";
 
@@ -36,6 +36,12 @@ export function entitiesForChapter(bible: Bible, chapter: Chapter): Bible {
   const outfits = bible.outfits.filter((outfit) => ids.has(outfit.id.split(".")[0]) && (outfit.chapters.length === 0 || outfit.chapters.includes(chapter.idx)));
   const locations = bible.locations.filter((location) => location.chapters.includes(chapter.idx) || chapter.text.includes(location.name));
   return { characters, outfits, locations };
+}
+
+export async function firstAppearanceCharacters(ctx: Context, chapter: Chapter, bible: Bible) {
+  const earlierPages = await ctx.db.all<{ storyboard: string }>("SELECT p.storyboard FROM pages p JOIN chapters c ON c.id = p.chapter_id WHERE c.idx < ?", [chapter.idx]);
+  const appeared = new Set(earlierPages.flatMap((row) => (JSON.parse(row.storyboard) as PageStoryboard).panels.flatMap((panel) => panel.characters.map((character) => character.id))));
+  return bible.characters.filter((character) => !appeared.has(character.id)).map((character) => ({ id: character.id, name: character.name, recurring: new Set(character.outfits.flatMap((outfit) => outfit.chapters)).size > 1 }));
 }
 
 export async function requireStoryboardReady(ctx: Context, chapter: string): Promise<void> {

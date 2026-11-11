@@ -168,6 +168,8 @@ pnpm comic lock LOCATION_REF_ID
 
 ### 制作与重做
 
+分镜默认要求主要/反复登场人物首次正式露面时显示“姓名或称呼＋当前身份/关系”，并在明显的空间切换、时间跳跃时给出简短提示。介绍与时地字幕使用已有 `narration` 文字，进入逐字审核并遵守框数和字数限制；不编造未知身份、时间，也不提前泄露后期信息。已在前章画面中出场的人物不每页重复介绍，画像和回忆不应误作现场人物。
+
 完成本章所需设定锁定后：
 
 ```sh
@@ -188,6 +190,17 @@ pnpm comic export -p demo-book --chapter 1 --force
 ```
 
 `redo` 开启新的审查与重抽周期，不受历史已用 `max_attempts` 限制，但本轮仍遵守 `review.max_attempts` 和预算闸；新结果确定前保留旧选定图，原始尝试保留，最终副本可更新。预算或取消中断后，用 `render` / `run` 不加 `--force` 继续当前周期；再次执行 `redo` 会开启新周期。重做后用 `export --force` 确保 PDF / HTML 使用最新页，而不是旧导出。
+
+只补人物介绍、时地字幕或改几张分镜时，把指定页的完整分镜对象放到 `{ "pages": [...] }` JSON 文件中：
+
+```sh
+pnpm comic storyboard patch -p demo-book --chapter 1 --file ./storyboard-patch.json --json
+pnpm comic adapt -p demo-book --chapter 1 --json
+pnpm comic render -p demo-book --chapter 1 --json
+pnpm comic export -p demo-book --chapter 1 --force --json
+```
+
+`storyboard patch` 不调用模型，只修改文件指定的既有页，保留未涉及页的选图、重抽周期和全部原图；无效页号、超限文字等在写入前拒绝。修改后必须重新 `adapt` 审核，不加 `--force` 会复用既有场景，随后 `render` 只处理变更后的待生成页。重新审核/必要修订及生图仍计费，旧导出可先留快照。
 
 整章重新改编可用 `pnpm comic run --chapter 1 --force`；强制改编重置该章工作分镜与 `render.start.*` 基线，历史尝试不删除，也不参与新一轮次数统计。此操作可能重新计费，不是清空项目的命令。
 
@@ -227,6 +240,7 @@ pnpm comic export -p demo-book --chapter 1 --force
 | `refs gen` | `--kind style\|outfit\|location`，可选 `--target <id>`、`--force` | 生成候选 |
 | `refs list` / `lock <ref_id>` | list 可选 `--status candidate\|locked\|rejected` | 列素材 / 锁定选定的图 |
 | `adapt` / `render` | `--chapter <n>` 必填，可选 `--force` | 改编、分镜与自审 / 生图、审查与重抽 |
+| `storyboard patch` | `--chapter <n>`、`--file <JSON路径>` 必填 | 只替换指定既有页，程序校验后待重新审核；不调用模型 |
 | `redo` | `--page <page_id>` 必填，`--note <说明>` 可选 | 重做一页 |
 | `export` | `--chapter <n>` 必填，可选 `--force` | 导出 / 更新 PDF 与 HTML |
 | `run` | `--chapter <n>` 必填，可选 `--dry-run`、`--force` | 章节流水线 / 无 API 提示词预览 |

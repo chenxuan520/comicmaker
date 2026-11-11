@@ -4,6 +4,9 @@
 【原文（带段号）】
 {{numbered chapter.paragraphs}}
 
+【本章首次正式出场候选】
+{{json first_appearance_characters}}
+
 【场景与节拍】
 {{json scenes}}
 
