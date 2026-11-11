@@ -11,6 +11,14 @@
 
 【本页分镜】
 {{json page}}
+
+【必须完整返回的角色记录清单】
+每行都对应一条 characters 记录；格 pN 对应数字 panel=N，同一角色跨格也须逐行记录。真实缺人仍记录该组合、两项评分为0并说明原因，不能省略；没有角色的格不生成假角色记录。
+{{#each page.panels}}
+{{#each characters}}
+- 格 {{../id}} / char_id: {{id}}
+{{/each}}
+{{/each}}
 {{#if (eq page.layout "strip-4")}}
 
 【手机条漫版式检查】

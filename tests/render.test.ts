@@ -71,6 +71,17 @@ test("visual review prompt requires every appearance and explicit missing-charac
   assert.match(prompt.system, /分镜要求但图片缺失的角色.*0.*具体缺失原因/);
 });
 
+test("visual review lists every expected appearance without inventing records for empty panels", async (t) => {
+  const f = await prepared(t);
+  const page = structuredClone(storyboard);
+  page.panels[1].characters = [];
+  page.panels.push({ ...structuredClone(page.panels[0]), id: "p4" });
+  const prompt = await f.ctx.prompts.pair("review_visual", { page, refs: [], characters: [], outfits: [] });
+  for (const panel of [1, 3, 4]) assert.ok(prompt.user.includes(`- 格 p${panel} / char_id: lin_qing`));
+  assert.ok(!prompt.user.includes("- 格 p2 /"));
+  assert.match(prompt.user, /真实缺人.*0/);
+});
+
 test("an incomplete visual response is retried on the same image, not redrawn", async (t) => {
   const f = await prepared(t);
   f.ctx.config.review.max_attempts = 1;
