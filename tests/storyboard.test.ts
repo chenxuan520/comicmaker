@@ -479,6 +479,8 @@ test("comparison filtering preserves real mentions, chapter evidence and outfit 
     ["family-only reference", "hero提起主角父亲的家人收过信。", [], [1], false],
     ["family-only reference without 的", "hero提起主角父亲家收过信。", [], [1], false],
     ["generic-owner reference", "铺里有主角父亲常用的旧囊。", [], [1], false],
+    ["receipt recipient only", "面前放着写给主角父亲的收条。", [], [1], false],
+    ["receipt recipient and real appearance", "写给主角父亲的收条还在。主角父亲来到Mountain。", [], [1], true],
     ["family reference and real appearance", "主角父亲的家人收过信。主角父亲来到Mountain。", [], [1], true],
     ["owner reference and real appearance", "有主角父亲常用的旧囊。主角父亲来到Mountain。", [], [1], true],
     ["reference with chapter evidence", "主角父亲的家人收过信。", ["2:1"], [1], true],

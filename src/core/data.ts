@@ -27,7 +27,7 @@ export function chapterData(chapter: Chapter) {
 export function entitiesForChapter(bible: Bible, chapter: Chapter): Bible {
   const characters = bible.characters.filter((character) => {
     const names = [character.name, ...character.aliases.filter((name) => [...name].length > 1)];
-    const mentionedText = names.reduce((text, name) => name ? text.replaceAll(`比${name}`, "").replaceAll(`${name}的家人`, "").replaceAll(`${name}家`, "").replaceAll(`${name}常用的`, "") : text, chapter.text);
+    const mentionedText = names.reduce((text, name) => name ? text.replaceAll(`比${name}`, "").replaceAll(`${name}的家人`, "").replaceAll(`${name}家`, "").replaceAll(`${name}常用的`, "").replaceAll(`${name}的收条`, "") : text, chapter.text);
     return character.evidence.some((source) => source.startsWith(`${chapter.idx}:`)) ||
       names.some((name) => name && mentionedText.includes(name)) ||
       bible.outfits.some((outfit) => outfit.id.startsWith(`${character.id}.`) && outfit.chapters.includes(chapter.idx));
