@@ -745,6 +745,45 @@ test("an invalid candidate blocks render, redo and export of historical passed p
   assert.equal(h.calls.length, 2);
 });
 
+test("an unfinished storyboard can be patched without re-adapting or bypassing review", async (t) => {
+  const pages = [makePage(1), makePage(2)];
+  const bad = structuredClone(pages[1]);
+  bad.panels = bad.panels.slice(0, 2);
+  const h = await harness(t, [{ pass: false, issues: [issue(2)] }, { pages: [bad] }, pass], makeBible(), makeConfig({ max_revisions: 1 }));
+  await cacheScenes(h);
+  await saveStoryboard(h.ctx, "001", pages);
+  await seedHistory(h, 1, 7);
+  await seedHistory(h, 2, 9);
+  await assert.rejects(adaptChapter(h.ctx, 1), /program validation/);
+  const untouched = await h.db.get<Page>("SELECT * FROM pages WHERE id = '001-p02'");
+  const attempts = await h.db.all("SELECT * FROM attempts ORDER BY id");
+  const reviews = await h.db.all("SELECT * FROM reviews ORDER BY id");
+  const refs = await h.db.all("SELECT * FROM refs ORDER BY id");
+  const spend = await h.ledger.all("SELECT * FROM spend");
+  const images = [...h.bytes.entries()];
+  const calls = h.calls.length;
+  const replacement = structuredClone(pages[0]);
+  replacement.panels[0].action = "Corrected source action";
+  assert.deepEqual(await patchStoryboard(h.ctx, 1, [replacement]), { chapter: "001", updated: ["001-p01"], review_required: true, skipped: false });
+  assert.equal(h.calls.length, calls);
+  assert.deepEqual(await h.ledger.all("SELECT * FROM spend"), spend);
+  assert.equal(await h.db.get("SELECT value FROM meta WHERE key = 'storyboard.candidate.001'"), undefined);
+  assert.equal(await h.db.get("SELECT value FROM meta WHERE key = 'storyboard.revisions.001'"), undefined);
+  await assert.rejects(renderChapter(h.ctx, 1), PreconditionError);
+  await assert.rejects(redoPage(h.ctx, "001-p02"), PreconditionError);
+  await assert.rejects(exportChapter(h.ctx, 1), PreconditionError);
+  assert.deepEqual(await h.db.get<Page>("SELECT * FROM pages WHERE id = '001-p02'"), untouched);
+  assert.deepEqual(await h.db.all("SELECT * FROM attempts ORDER BY id"), attempts);
+  assert.deepEqual(await h.db.all("SELECT * FROM reviews ORDER BY id"), reviews);
+  assert.deepEqual(await h.db.all("SELECT * FROM refs ORDER BY id"), refs);
+  assert.deepEqual([...h.bytes.entries()], images);
+  await adaptChapter(h.ctx, 1);
+  assert.equal(h.calls.length, calls + 1);
+  assert.equal(h.calls.at(-1)!.schema_name, "storyboard_review");
+  assert.deepEqual(JSON.parse(h.calls.at(-1)!.user).storyboard.pages, [replacement, pages[1]]);
+  assert.equal((await h.db.get<{ version: number }>("SELECT version FROM adaptations WHERE chapter_id = '001'"))!.version, 1);
+});
+
 test("unfinished review resumes the saved adaptation and program-valid storyboard", async (t) => {
   const h = await harness(t, [makeAdaptation(), { pages: [makePage()] }, new Error("review interrupted"), pass]);
   await assert.rejects(adaptChapter(h.ctx, 1), /review interrupted/);

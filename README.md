@@ -206,7 +206,7 @@ pnpm comic render -p demo-book --chapter 1 --json
 pnpm comic export -p demo-book --chapter 1 --force --json
 ```
 
-`storyboard patch` 不调用模型，只修改文件指定的既有页，保留未涉及页的选图、重抽周期和全部原图；无效页号、超限文字等在写入前拒绝。修改后必须重新 `adapt` 审核，不加 `--force` 会复用既有场景，随后 `render` 只处理变更后的待生成页。重新审核/必要修订及生图仍计费，旧导出可先留快照。
+`storyboard patch` 不调用模型，也可修正审核未完成的既有草稿；只修改文件指定的既有页，保留未涉及页的选图、重抽周期和全部原图；无效页号、超限文字等在写入前拒绝。修改后必须重新 `adapt` 审核，不加 `--force` 会复用既有场景，随后 `render` 只处理变更后的待生成页。重新审核/必要修订及生图仍计费，旧导出可先留快照。
 
 整章重新改编可用 `pnpm comic run --chapter 1 --force`；强制改编重置该章工作分镜与 `render.start.*` 基线，历史尝试不删除，也不参与新一轮次数统计。此操作可能重新计费，不是清空项目的命令。
 

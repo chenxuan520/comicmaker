@@ -1,5 +1,5 @@
 import { adaptationSchema, storyboardSchema, storyboardReviewSchema, type Scene, type PageStoryboard, type StoryboardIssue } from "../../../schemas/index.js";
-import { getChapter, getBible, entitiesForChapter, chapterData, requireLocked, requireStoryboardReady, firstAppearanceCharacters } from "../data.js";
+import { getChapter, getBible, entitiesForChapter, chapterData, requireLocked, firstAppearanceCharacters } from "../data.js";
 import { ComicError, PreconditionError } from "../errors.js";
 import { structuredCall } from "../llm.js";
 import type { SqlStatement } from "../ports.js";
@@ -55,7 +55,6 @@ export async function patchStoryboard(ctx: Context, chapterNumber: number | stri
   const chapter = await getChapter(ctx, chapterNumber);
   const adaptation = await ctx.db.get<{ scenes: string }>("SELECT scenes FROM adaptations WHERE chapter_id = ?", [chapter.id]);
   if (!adaptation) throw new PreconditionError("Adapt the chapter before patching its storyboard");
-  await requireStoryboardReady(ctx, chapter.id);
   const replacements = storyboardSchema.parse({ pages: updates }).pages;
   const stored = await ctx.db.all<Page>("SELECT * FROM pages WHERE chapter_id = ? ORDER BY page_no", [chapter.id]);
   const existing = new Set(stored.map((page) => page.page_no));
