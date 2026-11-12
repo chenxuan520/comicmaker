@@ -2,7 +2,7 @@ import { rewriteSchema } from "../../../schemas/index.js";
 import { getChapter, getPage, requireStoryboardReady } from "../data.js";
 import { isRefusal, isTimeout } from "../calls.js";
 import { PreconditionError } from "../errors.js";
-import { generateImage, recoverPendingImages } from "../image.js";
+import { generateImage, recoverPendingImages, sha256 } from "../image.js";
 import { structuredCall } from "../llm.js";
 import { buildPagePrompt } from "../promptBuilder.js";
 import { reviewAttempt, type ReviewResult } from "../review.js";
@@ -114,6 +114,22 @@ export async function renderChapter(ctx: Context, chapterNumber: number | string
 export async function redoPage(ctx: Context, pageId: string, note?: string) {
   const result = await renderPage(ctx, pageId, { redo: true, note });
   const page = await getPage(ctx, pageId);
+  await ctx.db.run("UPDATE chapters SET status = 'rendered' WHERE id = ?", [page.chapter_id]);
+  return result;
+}
+
+export async function restorePageAttempt(ctx: Context, pageId: string, attemptId: string) {
+  const page = await getPage(ctx, pageId);
+  await requireStoryboardReady(ctx, page.chapter_id);
+  const attempt = await ctx.db.get<Attempt>("SELECT * FROM attempts WHERE id = ? AND page_id = ?", [attemptId, page.id]);
+  const review = await ctx.db.get<{ id: string; score: number; passed: number; fix_instructions: string | null; text_check: string | null }>("SELECT * FROM reviews WHERE attempt_id = ?", [attemptId]);
+  if (!attempt?.path || attempt.status !== "ok" || !review) throw new PreconditionError("Restore requires a saved reviewed page attempt");
+  const note = await ctx.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", [`render.note.${page.id}`]);
+  const built = await buildPagePrompt(ctx, JSON.parse(page.storyboard), note?.value ?? "");
+  if (attempt.prompt !== built.prompt.text || attempt.model !== ctx.config.image.model || attempt.quality !== ctx.config.image.quality || attempt.ref_paths !== JSON.stringify(built.refs.map((ref) => ref.path))) throw new PreconditionError("Saved attempt inputs do not match the current page");
+  const bytes = await ctx.fs.readBytes(attempt.path);
+  if (!bytes || await sha256(bytes) !== attempt.sha256) throw new PreconditionError("Saved attempt original is missing or changed");
+  const result = await selectAttempt(ctx, page, [{ attempt, review: { id: review.id, score: review.score, passed: Boolean(review.passed), corrections: review.fix_instructions ?? "", text_errors: JSON.parse(review.text_check ?? "{}").errors ?? [] } }]);
   await ctx.db.run("UPDATE chapters SET status = 'rendered' WHERE id = ?", [page.chapter_id]);
   return result;
 }

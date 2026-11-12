@@ -10,7 +10,7 @@ import { createProject, importNovel } from "../core/project.js";
 import { addLocationChapter, addOutfitChapter, addSettings, prepareBook } from "../core/steps/prepare.js";
 import { generateRefs, lockRef } from "../core/steps/refs.js";
 import { adaptChapter, patchStoryboard } from "../core/steps/adapt.js";
-import { redoPage, renderChapter } from "../core/steps/render.js";
+import { redoPage, renderChapter, restorePageAttempt } from "../core/steps/render.js";
 import { exportChapter } from "../core/steps/export.js";
 import { dryRunChapter, renderStepPrompt, runChapter } from "../core/pipeline.js";
 import { getStatus } from "../core/status.js";
@@ -22,7 +22,7 @@ interface Flags {
   projectId?: string; json?: boolean; force?: boolean; ignoreLimit?: boolean;
   title?: string; style?: string; novel?: string; chapter?: string; page?: string;
   kind?: string; target?: string; status?: string; note?: string; workspace?: boolean;
-  project?: boolean; dryRun?: boolean; host?: string; port?: string; file?: string; paragraph?: string;
+  project?: boolean; dryRun?: boolean; host?: string; port?: string; file?: string; paragraph?: string; attempt?: string;
 }
 
 const program = new Command().name("comic").description("Local AI novel-to-comic studio").version("0.1.0")
@@ -82,6 +82,7 @@ const storyboard = program.command("storyboard");
 action(storyboard.command("patch").requiredOption("--chapter <n>").requiredOption("--file <path>"), true, async (_, flags, __, ctx) => patchStoryboard(ctx!, flags.chapter!, JSON.parse(await readFile(resolve(flags.file!), "utf8")).pages));
 action(program.command("render").requiredOption("--chapter <n>"), true, async (_, flags, __, ctx) => renderChapter(ctx!, flags.chapter!, { force: flags.force }));
 action(program.command("redo").requiredOption("--page <id>").option("--note <text>"), true, async (_, flags, __, ctx) => redoPage(ctx!, flags.page!, flags.note));
+action(program.command("restore-page <page_id>").requiredOption("--attempt <id>"), true, async ([id], flags, __, ctx) => restorePageAttempt(ctx!, id, flags.attempt!));
 action(program.command("export").requiredOption("--chapter <n>"), true, async (_, flags, workspace, ctx) => exportChapter(ctx!, flags.chapter!, { force: flags.force, font: await exportFont(ctx!, workspace.root) }));
 action(program.command("run").requiredOption("--chapter <n>").option("--dry-run"), true, async (_, flags, workspace, ctx) => flags.dryRun ? dryRunChapter(ctx!, flags.chapter!) : runChapter(ctx!, flags.chapter!, { force: flags.force, font: await exportFont(ctx!, workspace.root) }));
 action(program.command("status").option("--chapter <n>"), true, async (_, flags, __, ctx) => getStatus(ctx!, flags.chapter));

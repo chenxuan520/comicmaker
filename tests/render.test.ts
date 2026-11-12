@@ -5,7 +5,7 @@ import { createProject, importNovel } from "../src/core/project.js";
 import { BudgetError } from "../src/core/errors.js";
 import { prepareBook } from "../src/core/steps/prepare.js";
 import { generateRefs, lockRef } from "../src/core/steps/refs.js";
-import { renderChapter, renderPage, redoPage } from "../src/core/steps/render.js";
+import { renderChapter, renderPage, redoPage, restorePageAttempt } from "../src/core/steps/render.js";
 import { exportChapter } from "../src/core/steps/export.js";
 import { compareText, evaluateReview, normalizeText } from "../src/core/review.js";
 import { exportFont } from "../src/adapters/runtime.js";
@@ -27,6 +27,72 @@ async function prepared(t: TestContext) {
   await ctx.db.run("INSERT INTO pages (id, chapter_id, page_no, storyboard, status) VALUES ('001-p01', '001', 1, ?, 'planned')", [JSON.stringify(storyboard)]);
   return { ...f, ...handle, ai };
 }
+
+test("restoring a matching reviewed attempt recovers the final copy without API calls or spend", async (t) => {
+  const f = await prepared(t);
+  const generated = await renderPage(f.ctx, "001-p01");
+  const attempt = await f.ctx.db.get<{ id: string; path: string }>("SELECT id,path FROM attempts WHERE id = ?", [generated.final_attempt_id!]);
+  const original = await f.ctx.fs.readBytes(attempt!.path);
+  const history = await f.ctx.db.all("SELECT * FROM attempts");
+  const reviews = await f.ctx.db.all("SELECT * FROM reviews");
+  const spend = await f.workspace.ledger.all("SELECT * FROM spend");
+  const images = f.ai.imageCalls.length;
+  const calls = f.ai.structuredCalls.length;
+  await f.ctx.db.run("UPDATE pages SET status = 'planned', final_attempt_id = NULL WHERE id = '001-p01'");
+  f.ctx.budget.begin = async () => { throw new BudgetError("No paid calls allowed", { scope: "workspace" }); };
+  assert.equal((await restorePageAttempt(f.ctx, "001-p01", attempt!.id)).final_attempt_id, attempt!.id);
+  assert.deepEqual(await f.ctx.fs.readBytes("chapters/001/pages/p01.png"), original);
+  assert.deepEqual(await f.ctx.fs.readBytes(attempt!.path), original);
+  assert.deepEqual(await f.ctx.db.all("SELECT * FROM attempts"), history);
+  assert.deepEqual(await f.ctx.db.all("SELECT * FROM reviews"), reviews);
+  assert.deepEqual(await f.workspace.ledger.all("SELECT * FROM spend"), spend);
+  assert.equal(f.ai.imageCalls.length, images);
+  assert.equal(f.ai.structuredCalls.length, calls);
+});
+
+test("restore rejects changed page, correction, model, quality and reference inputs", async (t) => {
+  const f = await prepared(t);
+  const generated = await renderPage(f.ctx, "001-p01");
+  const originalImage = structuredClone(f.ctx.config.image);
+  const changed = structuredClone(storyboard);
+  changed.panels[0].action += " changed";
+  const changes = [
+    async () => f.ctx.db.run("UPDATE pages SET storyboard = ? WHERE id = '001-p01'", [JSON.stringify(changed)]),
+    async () => f.ctx.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('render.note.001-p01', 'new correction')"),
+    async () => { f.ctx.config.image.model = "another-image-model"; },
+    async () => { f.ctx.config.image.quality = originalImage.quality === "low" ? "high" : "low"; },
+    async () => { f.ctx.config.image.include_style_ref = false; },
+  ];
+  const calls = f.ai.structuredCalls.length;
+  const images = f.ai.imageCalls.length;
+  for (const change of changes) {
+    f.ctx.config.image = structuredClone(originalImage);
+    await f.ctx.db.run("UPDATE pages SET storyboard = ?, status = 'planned', final_attempt_id = NULL WHERE id = '001-p01'", [JSON.stringify(storyboard)]);
+    await f.ctx.db.run("DELETE FROM meta WHERE key = 'render.note.001-p01'");
+    await change();
+    await assert.rejects(restorePageAttempt(f.ctx, "001-p01", generated.final_attempt_id!), /inputs do not match/);
+    assert.equal((await f.ctx.db.get<Page>("SELECT * FROM pages WHERE id = '001-p01'"))!.final_attempt_id, null);
+  }
+  assert.equal(f.ai.imageCalls.length, images);
+  assert.equal(f.ai.structuredCalls.length, calls);
+});
+
+test("restore requires a reviewed intact original and a completed storyboard review", async (t) => {
+  const f = await prepared(t);
+  const generated = await renderPage(f.ctx, "001-p01");
+  const attempt = await f.ctx.db.get<{ id: string; path: string }>("SELECT id,path FROM attempts WHERE id = ?", [generated.final_attempt_id!]);
+  await assert.rejects(restorePageAttempt(f.ctx, "001-p01", "unknown"), /saved reviewed page attempt/);
+  const read = f.ctx.fs.readBytes.bind(f.ctx.fs);
+  f.ctx.fs.readBytes = async (path) => path === attempt!.path ? new Uint8Array([1, 2, 3]) : read(path);
+  await assert.rejects(restorePageAttempt(f.ctx, "001-p01", attempt!.id), /original is missing or changed/);
+  f.ctx.fs.readBytes = read;
+  await f.ctx.db.run("INSERT INTO adaptations (chapter_id, scenes, version) VALUES ('001', '[]', 1)");
+  await f.ctx.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('storyboard.review.001', '{\"completed\":false}')");
+  await assert.rejects(restorePageAttempt(f.ctx, "001-p01", attempt!.id), /Complete storyboard validation/);
+  await f.ctx.db.run("DELETE FROM adaptations WHERE chapter_id = '001'");
+  await f.ctx.db.run("DELETE FROM reviews WHERE attempt_id = ?", [attempt!.id]);
+  await assert.rejects(restorePageAttempt(f.ctx, "001-p01", attempt!.id), /saved reviewed page attempt/);
+});
 
 test("text comparison normalizes punctuation and whitespace but never matches a different panel", () => {
   assert.equal(normalizeText(" 你 好... (来了?) "), "你好……（来了？）");
