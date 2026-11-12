@@ -76,7 +76,10 @@ export function validateStoryboard(pages: PageStoryboard[], scenes: Scene[], bib
       }
       if (!locations.has(panel.location_id)) add(page.page_no, panel.id, "faithfulness", `Unknown location ${panel.location_id}`, "Use a location ID from the supplied bible");
       if (!locked.has(`location:${panel.location_id}`)) add(page.page_no, panel.id, "faithfulness", `Location ${panel.location_id} has no locked reference`, "Lock this location reference before continuing");
+      const panelCharacters = new Set<string>();
       for (const character of panel.characters) {
+        if (panelCharacters.has(character.id)) add(page.page_no, panel.id, "faithfulness", `Duplicate character ID ${character.id} in this panel`, "List each character ID once per panel; describe reflections and unnamed creatures in the action instead of duplicating another character's ID");
+        panelCharacters.add(character.id);
         pageCharacters.add(character.id);
         if (!characters.has(character.id)) add(page.page_no, panel.id, "faithfulness", `Unknown character ${character.id}`, "Use a character ID from the supplied bible");
         if (!outfits.has(character.outfit)) add(page.page_no, panel.id, "faithfulness", `Unknown outfit ${character.outfit}`, "Use an outfit ID from the supplied bible");

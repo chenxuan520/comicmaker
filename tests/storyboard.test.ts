@@ -278,6 +278,20 @@ test("unknown IDs, outfit ownership, and unlocked references are faithfulness is
   }
 });
 
+test("character IDs are unique within a panel, not across panels or pages", () => {
+  const bible = makeBible();
+  const refs = makeRefs(bible);
+  const pages = [makePage(1), makePage(2)];
+  assert.deepEqual(validateStoryboard(pages, makeAdaptation().scenes, bible, refs, makeConfig()), []);
+  pages[0].panels[0].characters.push({ ...pages[0].panels[0].characters[0], pose: "an unnamed wolf pouncing", position: "右" });
+  const duplicates = validateStoryboard(pages, makeAdaptation().scenes, bible, refs, makeConfig()).filter((issue) => issue.detail.includes("Duplicate character ID"));
+  assert.equal(duplicates.length, 1);
+  assert.equal(duplicates[0].page, 1);
+  assert.equal(duplicates[0].panel, "p1");
+  assert.equal(duplicates[0].type, "faithfulness");
+  assert.match(duplicates[0].detail, /hero/);
+});
+
 test("page/panel/beat definitions are unique, but panel IDs and beat placements may repeat across pages", () => {
   const bible = makeBible();
   const refs = makeRefs(bible);
