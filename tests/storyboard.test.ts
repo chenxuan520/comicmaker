@@ -503,9 +503,17 @@ test("family and generic-owner references do not require absent characters' outf
 test("new generic cargo owners do not reintroduce the earlier cargo owner", () => {
   for (const [text, evidence, chapters, included] of [
     ["新来的货主围着看。", [], [1], false],
+    ["一名货主催着验货。", [], [1], false],
+    ["旁人说货主围着问进度。", [], [1], false],
+    ["旁人说货主围着问进度。一名货主催着验货。", [], [1], false],
     ["新来的货主围着看。货主来到Mountain。", [], [1], true],
+    ["一名货主催着验货。货主来到Mountain。", [], [1], true],
     ["新来的货主围着看。", ["2:1"], [1], true],
+    ["一名货主催着验货。", ["2:1"], [1], true],
+    ["旁人说货主围着问进度。", ["2:1"], [1], true],
     ["新来的货主围着看。", [], [2], true],
+    ["一名货主催着验货。", [], [2], true],
+    ["旁人说货主围着问进度。", [], [2], true],
   ] as const) {
     const bible = makeBible(["hero", "owner"]);
     bible.characters[1].name = "货主";
@@ -515,6 +523,22 @@ test("new generic cargo owners do not reintroduce the earlier cargo owner", () =
     const chapter: Chapter = { id: "002", idx: 2, title: "Chapter two", text, summary: null, status: "imported" };
     assert.equal(entitiesForChapter(bible, chapter).characters.some((character) => character.id === "owner"), included, text);
   }
+});
+
+test("anonymous cargo-owner mentions do not require the earlier owner's outfit during adaptation", async (t) => {
+  const bible = makeBible(["hero", "owner"]);
+  bible.characters[1].name = "货主";
+  bible.characters[1].aliases = [];
+  bible.characters[1].evidence = ["1:1"];
+  bible.outfits[1].chapters = [1];
+  const h = await harness(t, [makeAdaptation(), { pages: [makePage()] }, pass], bible);
+  await h.db.run("INSERT INTO chapters (id, idx, title, text, summary, status) VALUES ('002', 2, 'Chapter two', ?, 'Second summary', 'imported')", ["hero enters Mountain.\n\n旁人说货主围着问进度。一名货主催着验货。"]);
+  await h.db.run("UPDATE refs SET status = 'candidate' WHERE target_id = 'owner.daily'");
+  await adaptChapter(h.ctx, 2);
+  assert.deepEqual(JSON.parse(h.calls[0].user).characters.map((character: { id: string }) => character.id), ["hero"]);
+  assert.deepEqual(JSON.parse(h.calls[0].user).outfits.map((outfit: { id: string }) => outfit.id), ["hero.daily"]);
+  assert.equal(h.calls.length, 3);
+  assert.equal((await h.db.get<Ref>("SELECT * FROM refs WHERE target_id = 'owner.daily'"))!.status, "candidate");
 });
 
 test("comparison filtering preserves real mentions, chapter evidence and outfit associations", () => {
