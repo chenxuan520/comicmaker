@@ -6,6 +6,7 @@
 - `src/core/` 是 CLI 与 Web 共用的业务流水线、提示词、审查和预算逻辑；通过 `src/core/ports.ts` 抽象 I/O。保持可移植：不得导入 Node 内置模块、`src/adapters/` 或 `src/cli/`，不得使用 `process`、`Buffer`。
 - `src/adapters/` 负责 SQLite、文件系统、三级配置与模板、`WorkspaceRuntime` 和回环 HTTP 服务。`src/cli/` 提供 CLI；`web/` 是 React UI，通过本地 HTTP API 使用同一核心，不另写生成流水线。
 - `schemas/` 提供共享 Zod 数据与配置校验；`config.default.yaml` 与 `prompts/` 是仓库默认层，工作区和项目覆盖层优先。
+- 制作、审计或修补漫画时先参照 `docs/COMIC_WORKFLOW.md`，尤其是读者视角通读、最小修补与交付终检；模型通过或导出成功不能代替上下文可读性的人工验收。
 
 ## 修改与验证
 
