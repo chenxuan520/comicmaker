@@ -3,6 +3,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { getChapter, requireStoryboardReady } from "../data.js";
 import { PreconditionError } from "../errors.js";
 import { jpegSize, pngSize, sha256 } from "../image.js";
+import { renderModernReader } from "../reader.js";
 import { pageFile, readingFile, STRIP_LAYOUT, type Context, type Page, type PageStoryboard, type ReadingImages, type UploadedImages } from "../types.js";
 
 function htmlEscape(text: string): string {
@@ -140,10 +141,28 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
     htmlPages.push(`<article class="text-page notice"><p>${htmlEscape(ctx.config.export.ai_notice_text)}</p></article>`);
   }
   if (pdf && paths.pdf) await ctx.fs.writeBytes(paths.pdf, await pdf.save());
-  if (paths.html) await ctx.fs.writeText(paths.html, `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${htmlEscape(ctx.project.title)} · ${htmlEscape(chapter.title)}</title>
-<style>body{margin:0;background:#eeeae2;color:#242b2a;font-family:system-ui,sans-serif}header,main{max-width:${fallbackSize.width}px;margin:auto}header{padding:24px;box-sizing:border-box}h1{font-size:24px}figure{margin:0 0 24px}img{display:block;width:100%;height:auto;background:white}figcaption{text-align:center;padding:12px;font-size:12px}.text-page{box-sizing:border-box;min-height:70vh;background:white;padding:8%;margin-bottom:24px;line-height:2}.notice{display:grid;place-content:center;text-align:center}${isStrip ? ".strip{background:white}.strip header,.strip main{max-width:720px}.strip figure{margin:0}.strip figcaption{padding:8px 12px;text-align:right;color:#59665e}.strip .text-page{margin-bottom:0}" : ""}</style></head>
-<body${isStrip ? ' class="strip" data-format="strip"' : ""}><header><h1>${htmlEscape(ctx.project.title)}</h1><p>${htmlEscape(chapter.title)}</p>${isStrip ? "<p>手机条漫 · 单列四格 · 向下滑动阅读</p>" : ""}</header><main>${htmlPages.join("\n")}</main></body></html>\n`);
+  if (paths.html) {
+    const allChapters = await ctx.db.all<{ id: string; idx: number; title: string; status: string }>(
+      "SELECT id, idx, title, status FROM chapters ORDER BY idx"
+    );
+    const chapterIdx = typeof chapter.idx === "number" ? chapter.idx : Number(chapterNumber);
+    const currentIndex = allChapters.findIndex((c) => c.id === chapter.id);
+    const prevChapter = currentIndex > 0 ? allChapters[currentIndex - 1] : null;
+    const nextChapter = currentIndex >= 0 && currentIndex < allChapters.length - 1 ? allChapters[currentIndex + 1] : null;
+
+    const htmlContent = renderModernReader({
+      projectTitle: ctx.project.title,
+      chapter: { id: chapter.id, idx: chapterIdx, title: chapter.title },
+      allChapters: allChapters.map((c) => ({ id: c.id, idx: c.idx, title: c.title })),
+      prevChapter: prevChapter ? { id: prevChapter.id, idx: prevChapter.idx, title: prevChapter.title } : null,
+      nextChapter: nextChapter ? { id: nextChapter.id, idx: nextChapter.idx, title: nextChapter.title } : null,
+      pagesHtml: htmlPages,
+      isStrip,
+      hasPdf: Boolean(pdf && paths.pdf),
+      fallbackWidth: fallbackSize.width,
+    });
+    await ctx.fs.writeText(paths.html, htmlContent);
+  }
   await ctx.db.transaction([
     { sql: "UPDATE chapters SET status = 'exported' WHERE id = ?", params: [chapter.id] },
     { sql: "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params: [readingKey, JSON.stringify(reading)] },

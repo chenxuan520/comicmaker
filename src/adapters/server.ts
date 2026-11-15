@@ -132,7 +132,7 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
   await scheduler.restore();
   const server = createServer(async (request, response) => {
     response.setHeader("X-Content-Type-Options", "nosniff");
-    response.setHeader("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'");
+    response.setHeader("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'");
     let finishMutation: (() => void) | undefined;
     let pendingReply: { status: number; value: unknown } | undefined;
     const replyJson = (status: number, value: unknown) => {
