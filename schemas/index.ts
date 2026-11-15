@@ -426,6 +426,7 @@ export const configSchema = z
         pdf: z.boolean(),
         html: z.boolean(),
         reading_image_kb: positiveInteger.nullable().default(200),
+        reading_max_width: positiveInteger.default(1024),
         imgbed: z.object({
           enabled: z.boolean().default(false),
           base_url: z.string().refine((value) => {

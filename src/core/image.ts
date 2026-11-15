@@ -32,6 +32,27 @@ export function pngSize(data: Uint8Array): { width: number; height: number } {
   throw new Error("PNG image is incomplete");
 }
 
+export function jpegSize(data: Uint8Array): { width: number; height: number } {
+  if (data.length < 4 || data[0] !== 255 || data[1] !== 216) throw new Error("Expected a JPEG image");
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  let offset = 2;
+  while (offset + 4 <= data.length) {
+    const marker = view.getUint16(offset);
+    if (marker === 0xffff) { offset++; continue; }
+    if ((marker & 0xff00) !== 0xff00 || marker === 0xffda || marker === 0xffd9) break;
+    const length = view.getUint16(offset + 2);
+    if (length < 2 || offset + length + 2 > data.length) break;
+    if ([0xffc0, 0xffc1, 0xffc2].includes(marker)) {
+      if (length < 8) break;
+      const width = view.getUint16(offset + 7), height = view.getUint16(offset + 5);
+      if (!width || !height) throw new Error("JPEG dimensions must be positive");
+      return { width, height };
+    }
+    offset += length + 2;
+  }
+  throw new Error("JPEG dimensions are missing or incomplete");
+}
+
 export async function sha256(data: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", data.slice().buffer)), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

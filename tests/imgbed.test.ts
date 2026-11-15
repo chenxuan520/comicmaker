@@ -242,6 +242,35 @@ test("upload caches track reading size, content and committed attempts, but not 
   assert.deepEqual(await f.workspace.ledger.all("SELECT * FROM spend ORDER BY id"), before);
 });
 
+test("reading width changes and widthless upload records invalidate hosted JPEG caches without generation", async (t) => {
+  const f = await book(t);
+  const before = { images: f.ai.imageCalls.length, text: f.ai.structuredCalls.length, spend: await f.workspace.ledger.all("SELECT * FROM spend ORDER BY id") };
+  await exportChapter(f.ctx, 1);
+  assert.equal((await uploadMarker(f.ctx))!.max_width, 1024);
+  f.ctx.config.export.reading_max_width = 1;
+  assert.equal((await getStatus(f.ctx)).pages[0].hosted_image_url, null);
+  assert.equal((await getStatus(f.ctx)).pages[0].reading_image_path, null);
+  await exportChapter(f.ctx, 1);
+  assert.equal(f.requests.length, 2);
+  assert.equal(jpeg.decode(f.requests[1].data).width, 1);
+  const marker = (await uploadMarker(f.ctx))!;
+  assert.equal(marker.max_width, 1);
+  delete marker.max_width;
+  await f.ctx.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('export.upload.001', ?)", [JSON.stringify(marker)]);
+  assert.equal((await getStatus(f.ctx)).pages[0].hosted_image_url, null);
+  await exportChapter(f.ctx, 1);
+  assert.equal(f.requests.length, 3);
+  f.ctx.config.export.reading_image_kb = null;
+  await exportChapter(f.ctx, 1);
+  const requests = f.requests.length;
+  f.ctx.config.export.reading_max_width = 2048;
+  assert.ok((await getStatus(f.ctx)).pages[0].hosted_image_url);
+  assert.equal((await exportChapter(f.ctx, 1)).skipped, true);
+  assert.equal(f.requests.length, requests);
+  for (const path of [...(await getStatus(f.ctx)).refs.map(ref => ref.path!), "chapters/001/attempts/p01-a1.png", "chapters/001/pages/p01.png"]) assert.deepEqual(await f.ctx.fs.readBytes(path), png);
+  assert.deepEqual({ images: f.ai.imageCalls.length, text: f.ai.structuredCalls.length, spend: await f.workspace.ledger.all("SELECT * FROM spend ORDER BY id") }, before);
+});
+
 test("changing the destination invalidates cached links and null compression uploads PNG without touching old JPEGs", async (t) => {
   const f = await book(t);
   await exportChapter(f.ctx, 1);

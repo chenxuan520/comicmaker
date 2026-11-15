@@ -98,6 +98,7 @@ export:
   pdf: true
   html: true
   reading_image_kb: 200
+  reading_max_width: 1024
   imgbed:
     enabled: false
     base_url: https://img.011203.xyz

@@ -26,8 +26,8 @@ export async function getStatus(ctx: Context, chapterNumber?: number | string) {
     const exported = reading.get(page.chapter_id);
     const hosted = uploads.get(page.chapter_id);
     const hostedImage = hosted?.pages[page.id];
-    const hostedUrl = hosted?.base_url === ctx.config.export.imgbed.base_url && hosted.target_kb === ctx.config.export.reading_image_kb && hostedImage?.attempt_id === page.final_attempt_id ? hostedImage?.url ?? null : null;
-    const readingPath = page.final_attempt_id && ctx.config.export.reading_image_kb !== null && exported?.target_kb === ctx.config.export.reading_image_kb && exported?.attempts[page.id] === page.final_attempt_id ? `chapters/${page.chapter_id}/export/${readingFile(page.page_no)}` : null;
+    const hostedUrl = hosted?.base_url === ctx.config.export.imgbed.base_url && hosted.target_kb === ctx.config.export.reading_image_kb && (ctx.config.export.reading_image_kb === null || hosted.max_width === ctx.config.export.reading_max_width) && hostedImage?.attempt_id === page.final_attempt_id ? hostedImage?.url ?? null : null;
+    const readingPath = page.final_attempt_id && ctx.config.export.reading_image_kb !== null && exported?.target_kb === ctx.config.export.reading_image_kb && exported.max_width === ctx.config.export.reading_max_width && exported?.attempts[page.id] === page.final_attempt_id ? `chapters/${page.chapter_id}/export/${readingFile(page.page_no)}` : null;
     return {
       ...page, storyboard: JSON.parse(page.storyboard),
       format: JSON.parse(page.storyboard).layout === STRIP_LAYOUT ? "strip" as const : "page" as const,

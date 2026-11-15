@@ -2,7 +2,7 @@ import { PDFDocument, rgb, type PDFFont } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { getChapter, requireStoryboardReady } from "../data.js";
 import { PreconditionError } from "../errors.js";
-import { pngSize, sha256 } from "../image.js";
+import { jpegSize, pngSize, sha256 } from "../image.js";
 import { pageFile, readingFile, STRIP_LAYOUT, type Context, type Page, type PageStoryboard, type ReadingImages, type UploadedImages } from "../types.js";
 
 function htmlEscape(text: string): string {
@@ -31,11 +31,12 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
   const flagged = rows.filter((page) => page.status === "flagged").map((page) => page.id);
   const paths = { pdf: ctx.config.export.pdf ? `${base}/chapter.pdf` : null, html: ctx.config.export.html ? `${base}/index.html` : null };
   const targetKb = ctx.config.export.reading_image_kb;
+  const maxWidth = ctx.config.export.reading_max_width;
   const readingKey = `export.reading.${chapter.id}`;
   const marker = await ctx.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", [readingKey]);
   const previous = marker ? JSON.parse(marker.value) as ReadingImages : undefined;
   const copies = new Map<string, Uint8Array>();
-  if (targetKb !== null && previous?.target_kb === targetKb) {
+  if (targetKb !== null && previous?.target_kb === targetKb && previous.max_width === maxWidth) {
     for (const row of rows) {
       if (row.final_attempt_id && previous.attempts[row.id] === row.final_attempt_id) {
         const bytes = await ctx.fs.readBytes(`${base}/${readingFile(row.page_no)}`);
@@ -43,12 +44,12 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
       }
     }
   }
-  const readingReady = targetKb === null ? !previous || previous.target_kb === null : previous?.target_kb === targetKb && copies.size === rows.filter((row) => row.final_attempt_id).length;
+  const readingReady = targetKb === null ? !previous || previous.target_kb === null : previous?.target_kb === targetKb && previous.max_width === maxWidth && copies.size === rows.filter((row) => row.final_attempt_id).length;
   const uploadKey = `export.upload.${chapter.id}`;
   const uploadMarker = await ctx.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", [uploadKey]);
   const savedUploads = uploadMarker ? JSON.parse(uploadMarker.value) as UploadedImages : undefined;
   const imgbed = ctx.config.export.imgbed;
-  const uploads: UploadedImages = savedUploads?.base_url === imgbed.base_url && savedUploads.target_kb === targetKb ? savedUploads : { base_url: imgbed.base_url, target_kb: targetKb, pages: {} };
+  const uploads: UploadedImages = savedUploads?.base_url === imgbed.base_url && savedUploads.target_kb === targetKb && (targetKb === null || savedUploads.max_width === maxWidth) ? savedUploads : { base_url: imgbed.base_url, target_kb: targetKb, max_width: maxWidth, pages: {} };
   const imageUrls = () => Object.fromEntries(rows.filter((row) => row.final_attempt_id && uploads.pages[row.id]?.attempt_id === row.final_attempt_id).map((row) => [row.id, uploads.pages[row.id].url]));
   const uploadReadingImage = async (row: Page, data: Uint8Array): Promise<boolean> => {
     ctx.signal?.throwIfAborted();
@@ -105,14 +106,15 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
     }
   };
   const htmlPages: string[] = [];
-  const reading: ReadingImages = { target_kb: targetKb, attempts: {} };
+  const reading: ReadingImages = { target_kb: targetKb, max_width: maxWidth, attempts: {} };
   for (const row of rows) {
     if (row.final_attempt_id) {
       const path = `chapters/${chapter.id}/pages/${pageFile(row.page_no)}`;
       const data = await ctx.fs.readBytes(path);
       if (!data) throw new PreconditionError(`Final page copy is missing: ${path}`);
       const size = pngSize(data);
-      const readingData = targetKb === null ? data : copies.get(row.id) ?? await ctx.fs.writeReadingCopy(`${base}/${readingFile(row.page_no)}`, data, targetKb);
+      const readingData = targetKb === null ? data : copies.get(row.id) ?? await ctx.fs.writeReadingCopy(`${base}/${readingFile(row.page_no)}`, data, targetKb, maxWidth);
+      const readingSize = targetKb === null ? size : jpegSize(readingData);
       if (imgbed.enabled) await uploadReadingImage(row, readingData);
       if (targetKb !== null) reading.attempts[row.id] = row.final_attempt_id;
       if (targetKb !== null) reading.attempts[row.id] = row.final_attempt_id;
@@ -122,9 +124,9 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
       }
       const imageSource = targetKb === null ? `../pages/${pageFile(row.page_no)}` : readingFile(row.page_no);
       if (isStrip) {
-        htmlPages.push(`<img src="${imageSource}" width="${size.width}" height="${size.height}" loading="lazy" alt="${htmlEscape(chapter.title)} ${row.page_no}${row.status === "flagged" ? "，待复核" : ""}">`);
+        htmlPages.push(`<img src="${imageSource}" width="${readingSize.width}" height="${readingSize.height}" loading="lazy" alt="${htmlEscape(chapter.title)} ${row.page_no}${row.status === "flagged" ? "，待复核" : ""}">`);
       } else {
-        htmlPages.push(`<figure><img src="${imageSource}" width="${size.width}" height="${size.height}" loading="lazy" alt="${htmlEscape(chapter.title)} ${row.page_no}"><figcaption>${row.page_no}${row.status === "flagged" ? " · flagged" : ""}</figcaption></figure>`);
+        htmlPages.push(`<figure><img src="${imageSource}" width="${readingSize.width}" height="${readingSize.height}" loading="lazy" alt="${htmlEscape(chapter.title)} ${row.page_no}"><figcaption>${row.page_no}${row.status === "flagged" ? " · flagged" : ""}</figcaption></figure>`);
       }
     } else {
       const storyboard = JSON.parse(row.storyboard) as PageStoryboard;

@@ -73,14 +73,15 @@ storyboard:
 
 ### 阅读图片大小
 
-生图画质 `image.quality` 与阅读图片压缩是两件事。生图和审查仍使用原始 PNG；导出在本机生成宽度最多 768 像素、不放大的 JPEG 阅读副本，自动调节压缩质量，默认目标为每张约 200 KiB。Web、HTML 和 PDF 使用阅读副本，「打开原图」仍可查看 PNG。不会因此调用模型或新增费用，也不会覆盖、删除参考图、尝试原图或最终 PNG 副本。
+生图画质 `image.quality` 与阅读图片压缩是两件事。生图和审查仍使用原始 PNG；导出在本机生成不放大的 JPEG 阅读副本，像素宽度上限由 `export.reading_max_width` 控制，默认 1024。压缩质量会自动调节，若仍超出大小目标则继续按比例缩小，因此实际尺寸可能低于宽度上限；HTML 的图片宽高按实际 JPEG 标注。默认目标为每张约 200 KiB。Web、HTML 和 PDF 使用阅读副本，「打开原图」仍可查看 PNG。不会因此调用模型或新增费用，也不会覆盖、删除参考图、尝试原图或最终 PNG 副本，生图 API 参考的原始尺寸不受此项影响。
 
 ```yaml
 export:
   reading_image_kb: 200
+  reading_max_width: 1024
 ```
 
-这个值支持工作区和项目覆盖；设为 `null` 使用原始 PNG 阅读和导出。目标不是严格字节上限，极小值或复杂画面可能超出，JPEG 是有损副本。已有章节执行 `export --chapter 1 --force` 即可生成或更新阅读副本，不需重新生图；重绘后也需更新导出。缓存绑定选定尝试和大小设置，不复用旧图的阅读副本。
+这两个值支持工作区和项目覆盖；`reading_max_width` 必须为正整数，`reading_image_kb: null` 使用原始 PNG 阅读和导出，此时不应用阅读宽度上限。大小目标不是严格字节上限，极小值或复杂画面可能超出，JPEG 是有损副本。已有章节执行 `export --chapter 1 --force` 即可生成或更新阅读副本，不需重新生图；重绘后也需更新导出。缓存绑定选定尝试、大小和宽度设置，配置变化及旧版缺少宽度记录的缓存会在重新导出时更新。
 
 ### 可选 ImgBed 上传
 
@@ -303,7 +304,7 @@ pnpm comic export -p demo-book --chapter 1 --force --json
 | `review.weights` | text_error `30`，major `20`，minor `5`，identity `40`，color `20`，panel_mismatch `50` |
 | `budget` | limit_usd `null`，period `month`，cycle_start_day `1`，timezone `Asia/Shanghai`；estimates.image / llm / full_book 为 `0.25 / 0.05 / 1.0` 美元预估值 |
 | `import` | 普通中文章标题正则，strip_patterns `[]`；Markdown 覆盖示例见上文 |
-| `export` | pdf / html / ai_notice_page `true`，reading_image_kb `200`，imgbed.enabled `false`、base_url `https://img.011203.xyz`，ai_notice_text `本作品由 AI 生成`，font_path `null`；text.font_size / margin / line_height `24 / 64 / 36` |
+| `export` | pdf / html / ai_notice_page `true`，reading_image_kb `200`、reading_max_width `1024`，imgbed.enabled `false`、base_url `https://img.011203.xyz`，ai_notice_text `本作品由 AI 生成`，font_path `null`；text.font_size / margin / line_height `24 / 64 / 36` |
 | `web` | host `127.0.0.1`，port `4321`，poll_interval_ms `2000`，max_upload_mb `20` |
 | `prompts` / `project` | vars `{}`；image_sections `[style, page, references, characters, panels, text_rules, corrections]`；style_desc `清新国风修仙，干净线稿，明亮通透的赛璐璐上色` |
 
@@ -440,15 +441,15 @@ PDF 用 `pdf-lib` 与 `@pdf-lib/fontkit` 嵌入本机字体，中文说明页或
 
 ## 验证与已知限制
 
-- **真实模型验收仅覆盖一部小说的第 1 章**：35 张最终漫画页通过配置的文字与画面审查，并导出 PDF / HTML。这是特定原稿与验收配置下的结果，不是所有默认模型、服务商、小说或全书的端到端保证。
-- 单章验收仍保留一条分镜重复对白提醒。程序校验、文字审查和画面审查通过，不等于叙事问题全部消失；其他章节及长期年龄 / 服装变化的生成效果尚未实测，需人工复核。
-- 同一原稿的首章还完成了 25 组、100 格手机条漫的真实模型验收；同样不代表其他小说或全书的质量保证。
+- **真实付费链路已覆盖一部小说的 42 章、814 画页**：已完成生成、PDF / HTML 导出与主助手逐页读者通读，并通过全书选图 PNG、阅读 JPEG、PDF 嵌图、HTML 顺序和 HTTP 字节一致性核验。实测使用 `gpt-6-luna` 文本 / 审核与 `gpt-image-2.6-sunburst` 生图；这是特定原稿、账户与配置下的结果，不代表所有默认模型、服务商或其他小说的端到端保证。
+- **内容总验收仍未通过，定向修补正在继续**：部分页面的解释、身份指代、画面或错字问题尚未处理完。模型审查通过、章节导出完成或文件字节一致，不能代替原文忠实、上下文可读和人物 / 道具 / 伤势连续性的人工验收；流程见 [docs/COMIC_WORKFLOW.md](docs/COMIC_WORKFLOW.md)。
+- Seedream 还完成过独立单章对照的真实图片返回与导出，原图及账本保留，仍有审核标记；该对照不代表 Seedream 的全书质量验收。
 - 公开代码不依赖验收小说、锁定参考图、账本或生成物；这些数据不随仓库提供。示例项目和小说文件需自行准备，不能直接切换到某个预置验收项目查看成果。
-- OpenAI provider 的兼容服务仍需支持 JSON Schema Structured Outputs、所选审查模型的视觉输入，以及以 `b64_json` 返回 PNG 的生成 / 多参考图编辑；DeepSeek、Seedream 和千问的原生协议适配见上文。新服务仅通过隔离 mock 协议与流水线验证，未进行真实收费 API 或生成质量验收；默认模型与单价需按账户实际能力核对。
+- OpenAI provider 的兼容服务仍需支持 JSON Schema Structured Outputs、所选审查模型的视觉输入，以及以 `b64_json` 返回 PNG 的生成 / 多参考图编辑；DeepSeek、Seedream 和千问的原生协议适配见上文。除上述实测组合与单章对照外，其他型号 / 端点的适配主要通过隔离 mock 协议与流水线检查，不能视为实际付费能力或生成质量保证；默认模型与单价需按账户实际能力核对。
 - ImgBed 接入通过回环模拟服务验证上传协议、缓存、取消及任务互斥；未试传真实作品，也未验证用户图床的业务凭据、存储渠道或实际公网链接可用性。
 - Web 仅面向回环单用户使用，没有云端部署、多用户认证或持久任务队列；不支持同一工作区的多进程并行制作。
 
-已有工程验证记录为 **300 项自动测试通过**，并通过 `lint`、`typecheck`、`build`。本地自动检查：
+运行 `pnpm test` 验证自动测试；完整本地自动检查：
 
 ```sh
 pnpm lint

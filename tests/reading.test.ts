@@ -10,6 +10,7 @@ import { LocalProjectFs } from "../src/adapters/projectFs.js";
 import { startServer } from "../src/adapters/server.js";
 import { createProject, importNovel } from "../src/core/project.js";
 import { getStatus } from "../src/core/status.js";
+import { jpegSize } from "../src/core/image.js";
 import { adaptChapter } from "../src/core/steps/adapt.js";
 import { exportChapter } from "../src/core/steps/export.js";
 import { prepareBook } from "../src/core/steps/prepare.js";
@@ -106,6 +107,30 @@ async function apiStatus(server: { url: string }) {
   };
 }
 
+test("JPEG dimension metadata reads byte views and supported frame headers without decoding pixels", () => {
+  const data = new Uint8Array(jpeg.encode({ width: 37, height: 19, data: new Uint8Array(37 * 19 * 4).fill(255) }, 85).data);
+  const padded = new Uint8Array(data.length + 13);
+  padded.set(data, 7);
+  assert.deepEqual(jpegSize(padded.subarray(7, 7 + data.length)), { width: 37, height: 19 });
+  const frame = data.findIndex((value, index) => value === 255 && data[index + 1] === 192);
+  assert.ok(frame >= 0);
+  for (const marker of [193, 194]) {
+    const otherFrame = data.slice();
+    otherFrame[frame + 1] = marker;
+    assert.deepEqual(jpegSize(otherFrame), { width: 37, height: 19 });
+  }
+  const fill = new Uint8Array(data.length + 1);
+  fill.set(data.subarray(0, 2));
+  fill[2] = 255;
+  fill.set(data.subarray(2), 3);
+  assert.deepEqual(jpegSize(fill), { width: 37, height: 19 });
+  const zeroWidth = data.slice();
+  zeroWidth[frame + 7] = 0;
+  zeroWidth[frame + 8] = 0;
+  assert.throws(() => jpegSize(zeroWidth), /positive/);
+  for (const invalid of [source, data.subarray(0, 16), new Uint8Array([255, 216, 255, 217])]) assert.throws(() => jpegSize(invalid));
+});
+
 test("reading targets validate and PNG copies become near-target JPEGs without upscaling or mutation", async (t) => {
   const f = await book(t);
   assert.equal(f.ctx.config.export.reading_image_kb, 200);
@@ -125,13 +150,13 @@ test("reading targets validate and PNG copies become near-target JPEGs without u
     const original = data.slice();
     const input = PNG.sync.read(Buffer.from(data));
     const path = `chapters/001/export/p0${index + 1}.jpg`;
-    const bytes = await f.ctx.fs.writeReadingCopy(path, data, 200);
+    const bytes = await f.ctx.fs.writeReadingCopy(path, data, 200, f.ctx.config.export.reading_max_width);
     assert.ok(bytes instanceof Uint8Array);
     assert.deepEqual(await f.ctx.fs.readBytes(path), bytes);
     assert.deepEqual(Array.from(bytes.subarray(0, 2)), [255, 216]);
     assert.deepEqual(Array.from(bytes.subarray(-2)), [255, 217]);
     const decoded = jpeg.decode(bytes, { useTArray: true });
-    assert.ok(decoded.width > 0 && decoded.width <= Math.min(768, input.width));
+    assert.ok(decoded.width > 0 && decoded.width <= Math.min(f.ctx.config.export.reading_max_width, input.width));
     assert.equal(decoded.height, Math.round(input.height * decoded.width / input.width));
     assert.equal(decoded.data.length, decoded.width * decoded.height * 4);
     const y = Math.floor(decoded.height / 16), left = Math.floor(decoded.width / 16);
@@ -147,6 +172,28 @@ test("reading targets validate and PNG copies become near-target JPEGs without u
     }
   }
   for (const path of paths) assert.deepEqual(await f.ctx.fs.readBytes(path), source);
+  assert.deepEqual(await spending(f), before);
+});
+
+test("reading maximum width validates and controls JPEG dimensions without upscaling originals", async (t) => {
+  const f = await book(t);
+  assert.equal(f.ctx.config.export.reading_max_width, 1024);
+  for (const width of [undefined, 1, 384, 2048]) {
+    const parsed = configSchema.parse({ ...f.ctx.config, export: { ...f.ctx.config.export, reading_max_width: width } });
+    assert.equal(parsed.export.reading_max_width, width ?? 1024);
+  }
+  for (const width of [null, 0, -1, 1.5, "1024", Infinity]) {
+    assert.equal(configSchema.safeParse({ ...f.ctx.config, export: { ...f.ctx.config.export, reading_max_width: width } }).success, false);
+  }
+  const before = await spending(f);
+  const original = source.slice();
+  for (const width of [384, 2048]) {
+    const data = await f.ctx.fs.writeReadingCopy(`chapters/001/export/width-${width}.jpg`, source, 4096, width);
+    const decoded = jpeg.decode(data, { useTArray: true });
+    assert.equal(decoded.width, Math.min(width, 1024));
+    assert.equal(decoded.height, Math.round(1536 * decoded.width / 1024));
+  }
+  assert.deepEqual(source, original);
   assert.deepEqual(await spending(f), before);
 });
 
@@ -174,7 +221,8 @@ test("strip HTML joins image groups without gutters and keeps original PNGs avai
   await renderChapter(f.ctx, 1);
   const exported = await exportChapter(f.ctx, 1);
   const html = (await f.ctx.fs.readText(exported.html!))!;
-  assert.match(html, /<img src="p01\.jpg" width="1024" height="1536"/);
+  const readingSize = jpeg.decode((await f.ctx.fs.readBytes(readingPath))!, { useTArray: true });
+  assert.match(html, new RegExp(`<img src="p01\\.jpg" width="${readingSize.width}" height="${readingSize.height}"`));
   assert.ok(!html.includes("<figcaption>") && !html.includes("<figure>"));
   const pdf = (await f.ctx.fs.readBytes(exported.pdf!))!;
   assert.ok(!pdfPdfBytesContainsPng(pdf));
@@ -193,9 +241,10 @@ test("default export and API serve JPEGs while flagged pages, PDF dimensions and
   assert.equal(exported.skipped, false);
   assert.deepEqual(exported.flagged, ["001-p01"]);
   const bytes = (await f.ctx.fs.readBytes(readingPath))!;
-  assert.ok(jpeg.decode(bytes).width <= 768);
+  assert.ok(jpeg.decode(bytes).width <= f.ctx.config.export.reading_max_width);
   const html = (await f.ctx.fs.readText(exported.html!))!;
-  assert.match(html, /<img src="p01\.jpg" width="1024" height="1536"/);
+  const readingSize = jpeg.decode(bytes, { useTArray: true });
+  assert.match(html, new RegExp(`<img src="p01\\.jpg" width="${readingSize.width}" height="${readingSize.height}"`));
   assert.match(html, /<figcaption>1[^<]*flagged<\/figcaption>/);
   assert.ok(!html.includes("../pages/"));
   const originalPdf = await f.ctx.fs.readBytes(exported.pdf!);
@@ -208,7 +257,7 @@ test("default export and API serve JPEGs while flagged pages, PDF dimensions and
   assert.ok(embedded instanceof PDFRawStream);
   assert.equal(embedded.dict.get(PDFName.of("Filter"))?.toString(), "/DCTDecode");
   assert.deepEqual(embedded.getContents(), bytes);
-  assert.deepEqual(await readingMarker(f.ctx), { target_kb: 200, attempts: { "001-p01": initial.pages[0].final_attempt_id } });
+  assert.deepEqual(await readingMarker(f.ctx), { target_kb: 200, max_width: 1024, attempts: { "001-p01": initial.pages[0].final_attempt_id } });
   const status = await getStatus(f.ctx);
   assert.equal(status.pages[0].image_path, originalPath);
   assert.equal(status.pages[0].reading_image_path, readingPath);
@@ -238,6 +287,46 @@ test("default export and API serve JPEGs while flagged pages, PDF dimensions and
   assert.deepEqual(await spending(f), before);
 });
 
+test("HTML-only export tracks configured width and migrates widthless reading caches without generation", async (t) => {
+  const f = await rendered(t);
+  const before = await spending(f);
+  const initial = await getStatus(f.ctx);
+  f.ctx.config.export.pdf = false;
+  f.ctx.config.export.reading_image_kb = 4096;
+  f.ctx.config.export.reading_max_width = 384;
+  await f.ctx.fs.writeText("project.yaml", "id: book\nexport:\n  pdf: false\n  ai_notice_page: false\n  reading_image_kb: 4096\n  reading_max_width: 384\n");
+  const copies = t.mock.method(f.ctx.fs, "writeReadingCopy");
+  const first = await exportChapter(f.ctx, 1);
+  assert.equal(first.pdf, null);
+  assert.match((await f.ctx.fs.readText(first.html!))!, /<img src="p01\.jpg" width="384" height="576"/);
+  assert.equal(copies.mock.calls[0].arguments[3], 384);
+  assert.deepEqual(await readingMarker(f.ctx), { target_kb: 4096, max_width: 384, attempts: { "001-p01": initial.pages[0].final_attempt_id } });
+  const server = await startServer(f.workspace, { host: "127.0.0.1", port: 0 });
+  f.cleanup.push(server.close);
+  assert.match((await apiStatus(server)).pages[0].image_url!, /&max_width=384/);
+  f.ctx.config.export.reading_max_width = 512;
+  await f.ctx.fs.writeText("project.yaml", "id: book\nexport:\n  pdf: false\n  ai_notice_page: false\n  reading_image_kb: 4096\n  reading_max_width: 512\n");
+  assert.equal((await getStatus(f.ctx)).pages[0].reading_image_path, null);
+  const stale = (await apiStatus(server)).pages[0];
+  assert.equal(stale.image_url, stale.original_image_url);
+  assert.equal((await exportChapter(f.ctx, 1)).skipped, false);
+  assert.equal(copies.mock.callCount(), 2);
+  assert.match((await f.ctx.fs.readText(first.html!))!, /<img src="p01\.jpg" width="512" height="768"/);
+  assert.match((await apiStatus(server)).pages[0].image_url!, /&max_width=512/);
+  await f.ctx.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", [markerKey, JSON.stringify({ target_kb: 4096, attempts: { "001-p01": initial.pages[0].final_attempt_id } })]);
+  assert.equal((await getStatus(f.ctx)).pages[0].reading_image_path, null);
+  assert.equal((await exportChapter(f.ctx, 1)).skipped, false);
+  assert.equal(copies.mock.callCount(), 3);
+  f.ctx.config.export.reading_image_kb = null;
+  await exportChapter(f.ctx, 1);
+  f.ctx.config.export.reading_max_width = 128;
+  assert.equal((await exportChapter(f.ctx, 1)).skipped, true);
+  assert.equal(copies.mock.callCount(), 3);
+  assert.match((await f.ctx.fs.readText(first.html!))!, /<img src="\.\.\/pages\/p01\.png" width="1024" height="1536"/);
+  for (const path of [...initial.refs.map(ref => ref.path!), "chapters/001/attempts/p01-a1.png", originalPath]) assert.deepEqual(await f.ctx.fs.readBytes(path), source);
+  assert.deepEqual(await spending(f), before);
+});
+
 test("legacy exports migrate for free and caches track KB, missing copies and committed final attempts; null restores PNG", async (t) => {
   const f = await rendered(t);
   const before = await spending(f);
@@ -260,7 +349,7 @@ test("legacy exports migrate for free and caches track KB, missing copies and co
   assert.equal((await exportChapter(f.ctx, 1)).skipped, false);
   assert.equal(copies.mock.callCount(), 2);
   assert.equal(copies.mock.calls[1].arguments[2], 320);
-  assert.deepEqual(await readingMarker(f.ctx), { target_kb: 320, attempts: { "001-p01": initial.pages[0].final_attempt_id } });
+  assert.deepEqual(await readingMarker(f.ctx), { target_kb: 320, max_width: 1024, attempts: { "001-p01": initial.pages[0].final_attempt_id } });
   await rm(join(f.projectRoot, readingPath));
   assert.equal((await exportChapter(f.ctx, 1)).skipped, false);
   assert.equal(copies.mock.callCount(), 3);
@@ -281,7 +370,7 @@ test("legacy exports migrate for free and caches track KB, missing copies and co
   assert.equal(copies.mock.callCount(), 4);
   const decoded = jpeg.decode((await f.ctx.fs.readBytes(readingPath))!);
   assert.deepEqual([decoded.width, decoded.height], [512, 768]);
-  assert.deepEqual(await readingMarker(f.ctx), { target_kb: 320, attempts: { "001-p01": "committed-reading-attempt" } });
+  assert.deepEqual(await readingMarker(f.ctx), { target_kb: 320, max_width: 1024, attempts: { "001-p01": "committed-reading-attempt" } });
   assert.equal((await getStatus(f.ctx)).pages[0].reading_image_path, readingPath);
   f.ctx.config.export.reading_image_kb = null;
   await f.ctx.fs.writeText("project.yaml", "id: book\nexport:\n  reading_image_kb: null\n  ai_notice_page: false\n");
@@ -291,7 +380,7 @@ test("legacy exports migrate for free and caches track KB, missing copies and co
   const pdf = await PDFDocument.load((await f.ctx.fs.readBytes("chapters/001/export/chapter.pdf"))!);
   assert.equal(pdf.getPageCount(), 1);
   assert.deepEqual(pdf.getPage(0).getSize(), { width: 512, height: 768 });
-  assert.deepEqual(await readingMarker(f.ctx), { target_kb: null, attempts: {} });
+  assert.deepEqual(await readingMarker(f.ctx), { target_kb: null, max_width: 1024, attempts: {} });
   assert.equal((await getStatus(f.ctx)).pages[0].reading_image_path, null);
   assert.ok(await f.ctx.fs.readBytes(readingPath), "Old JPEG files must not override disabled reading copies");
   assert.equal((await exportChapter(f.ctx, 1)).skipped, true);
@@ -335,10 +424,10 @@ test("reading copy writes preserve refs, attempts and pages and reject symlink e
   await f.ctx.fs.writeImage(paths[1], data);
   await f.ctx.fs.replaceCopy(originalPath, data);
   for (const path of [...paths, "refs/style/new.jpg", "chapters/001/attempts/new.jpg", "chapters/001/pages/p01.jpg", "REFS/style/original.png"]) {
-    await assert.rejects(f.ctx.fs.writeReadingCopy(path, data, 200), `Reading copy must not write ${path}`);
+    await assert.rejects(f.ctx.fs.writeReadingCopy(path, data, 200, f.ctx.config.export.reading_max_width), `Reading copy must not write ${path}`);
   }
   for (const path of ["../escape.jpg", "chapters/001/export/../escape.jpg", "/escape.jpg", "chapters\\001\\export\\p01.jpg"]) {
-    await assert.rejects(f.ctx.fs.writeReadingCopy(path, data, 200), /Invalid project-relative path/);
+    await assert.rejects(f.ctx.fs.writeReadingCopy(path, data, 200, f.ctx.config.export.reading_max_width), /Invalid project-relative path/);
   }
   const outside = join(f.root, "outside");
   await mkdir(outside);
@@ -347,14 +436,14 @@ test("reading copy writes preserve refs, attempts and pages and reject symlink e
   await outsideFs.writeBytes("p01.jpg", sentinel);
   const directory = join(f.projectRoot, "chapters", "001", "export");
   await symlink(outside, directory);
-  await assert.rejects(f.ctx.fs.writeReadingCopy(readingPath, data, 200), /symlink/i);
+  await assert.rejects(f.ctx.fs.writeReadingCopy(readingPath, data, 200, f.ctx.config.export.reading_max_width), /symlink/i);
   await rm(directory);
-  await f.ctx.fs.writeReadingCopy("chapters/001/export/p02.jpg", data, 200);
+  await f.ctx.fs.writeReadingCopy("chapters/001/export/p02.jpg", data, 200, f.ctx.config.export.reading_max_width);
   await symlink(join(outside, "p01.jpg"), join(directory, "p01.jpg"));
-  await assert.rejects(f.ctx.fs.writeReadingCopy(readingPath, data, 200), /symlink/i);
+  await assert.rejects(f.ctx.fs.writeReadingCopy(readingPath, data, 200, f.ctx.config.export.reading_max_width), /symlink/i);
   const alias = join(f.root, "project-alias");
   await symlink(f.projectRoot, alias);
-  await assert.rejects(new LocalProjectFs(alias).writeReadingCopy("chapters/001/export/p03.jpg", data, 200), /symlink/i);
+  await assert.rejects(new LocalProjectFs(alias).writeReadingCopy("chapters/001/export/p03.jpg", data, 200, f.ctx.config.export.reading_max_width), /symlink/i);
   assert.deepEqual(await outsideFs.readBytes("p01.jpg"), sentinel);
   assert.equal(await outsideFs.readBytes("p03.jpg"), null);
   for (const path of paths) assert.deepEqual(await f.ctx.fs.readBytes(path), original);

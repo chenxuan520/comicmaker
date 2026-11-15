@@ -84,9 +84,10 @@ export class LocalProjectFs implements ProjectFs {
     }
   }
 
-  async writeReadingCopy(relPath: string, data: Uint8Array, targetKb: number): Promise<Uint8Array> {
+  async writeReadingCopy(relPath: string, data: Uint8Array, targetKb: number, maxWidth: number): Promise<Uint8Array> {
+    if (!Number.isInteger(maxWidth) || maxWidth < 1) throw new Error("Reading maximum width must be a positive integer");
     const original = PNG.sync.read(Buffer.from(data));
-    let width = Math.min(768, original.width);
+    let width = Math.min(maxWidth, original.width);
     let encoded: Uint8Array;
     for (;;) {
       const height = Math.max(1, Math.round(original.height * width / original.width));
