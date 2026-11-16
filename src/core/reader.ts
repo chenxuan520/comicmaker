@@ -280,11 +280,33 @@ export function renderModernReader(options: ModernReaderOptions): string {
     }
     .chapter-content {
       width: 100%;
+      margin: 0;
+      padding: 0;
+      line-height: 0;
+      font-size: 0;
     }
+    #prependedChapters, #appendedChapters {
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      line-height: 0;
+      font-size: 0;
+    }
+    .manga-panel {
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      line-height: 0;
+      font-size: 0;
+    }
+    .manga-panel img,
     .chapter-content img {
       display: block;
       width: 100%;
       height: auto;
+      margin: 0;
+      padding: 0;
+      border: 0;
       vertical-align: bottom;
       content-visibility: auto;
     }
@@ -322,37 +344,12 @@ export function renderModernReader(options: ModernReaderOptions): string {
       min-height: 20vh;
     }
 
-    .load-prev-bar {
-      display: none;
-      text-align: center;
-      padding: 14px 16px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--accent);
-      background: var(--btn-sec-bg);
-      border-bottom: 1px dashed var(--border-strong);
-      cursor: pointer;
-      user-select: none;
-      transition: background 0.2s, color 0.2s;
-    }
-    .load-prev-bar:hover {
-      background: var(--btn-sec-hover);
-    }
-    .loading-prev-chapter {
-      padding: 20px 16px;
-      text-align: center;
-      font-size: 13px;
-      color: var(--text-sub);
-      display: none;
-      background: var(--btn-sec-bg);
-      border-bottom: 1px dashed var(--border-strong);
-    }
-    .loading-prev-chapter.show {
-      display: block;
-    }
-
     .chapter-divider {
+      width: 100%;
+      box-sizing: border-box;
       padding: 40px 16px;
+      line-height: 1.5;
+      font-size: 14px;
       background: radial-gradient(circle at 50% 50%, rgba(0, 229, 255, 0.1) 0%, transparent 80%), var(--bg);
       text-align: center;
       border-top: 1px dashed var(--border-strong);
@@ -376,17 +373,6 @@ export function renderModernReader(options: ModernReaderOptions): string {
       font-weight: 600;
       color: var(--text-main);
       margin-bottom: 4px;
-    }
-
-    .loading-next-chapter {
-      padding: 28px 16px;
-      text-align: center;
-      font-size: 13px;
-      color: var(--text-sub);
-      display: none;
-    }
-    .loading-next-chapter.show {
-      display: block;
     }
 
     .end-card {
@@ -818,12 +804,6 @@ export function renderModernReader(options: ModernReaderOptions): string {
   <main class="manga-wrapper" id="mangaWrapper">
     <!-- 向上无限流：动态挂载更早章节 -->
     <div id="prependedChapters"></div>
-    <div class="loading-prev-chapter" id="loadingPrevChapter">
-      <span>正在为您加载上一章...</span>
-    </div>
-    <div class="load-prev-bar" id="loadPrevBar" onclick="loadPrevChapterSeamlessly()">
-      <span>&uarr; 上滑加载上一章</span>
-    </div>
 
     <div class="chapter-content" id="chapterContent-${chapter.id}" data-id="${chapter.id}" data-idx="${chapter.idx}" data-title="${htmlEscape(pureTitle)}">
       ${pagesHtml.join("\n")}
@@ -831,10 +811,6 @@ export function renderModernReader(options: ModernReaderOptions): string {
 
     <!-- 向下无限流：动态追加后续章节 -->
     <div id="appendedChapters"></div>
-
-    <div class="loading-next-chapter" id="loadingNextChapter">
-      <span>正在为您加载下一章...</span>
-    </div>
 
     <!-- 章节结尾卡片 -->
     <footer class="end-card">
@@ -945,7 +921,6 @@ export function renderModernReader(options: ModernReaderOptions): string {
     function onInfiniteChange(checked) {
       isInfiniteScroll = checked;
       localStorage.setItem('comic-infinite', checked ? 'true' : 'false');
-      updatePrevBar();
     }
 
     const THEMES = ['dark', 'sepia', 'light'];
@@ -994,45 +969,22 @@ export function renderModernReader(options: ModernReaderOptions): string {
       if (float) float.classList.toggle('menu-open', isAnyOpen);
     }
 
-    // 双向无限流动连续阅读引擎
+    // 双向无感无限流动连续阅读引擎
     let loadedChapterIndices = [${chapter.idx}];
     let isLoadingNextChapter = false;
     let isLoadingPrevChapter = false;
     let hasUserScrolled = false;
     let lastScrollY = window.scrollY || document.documentElement.scrollTop || 0;
 
-    function updatePrevBar() {
-      var bar = document.getElementById('loadPrevBar');
-      if (!bar) return;
-      var firstIdx = loadedChapterIndices[0];
-      if (isInfiniteScroll && firstIdx > 1) {
-        bar.style.display = 'block';
-        var prevMeta = ALL_CHAPTERS[firstIdx - 2];
-        if (prevMeta) {
-          bar.innerHTML = '<span>&uarr; 上滑自动加载第 ' + prevMeta.idx + ' 章 · ' + prevMeta.title + '（或点击直达）</span>';
-        }
-      } else {
-        bar.style.display = 'none';
-      }
-    }
-    updatePrevBar();
-
     async function loadPrevChapterSeamlessly() {
       if (!isInfiniteScroll || isLoadingPrevChapter) return;
       var firstIdx = loadedChapterIndices[0];
-      if (firstIdx <= 1) {
-        updatePrevBar();
-        return;
-      }
+      if (firstIdx <= 1) return;
 
       var prevMeta = ALL_CHAPTERS[firstIdx - 2];
       if (!prevMeta) return;
 
       isLoadingPrevChapter = true;
-      var loadingEl = document.getElementById('loadingPrevChapter');
-      var bar = document.getElementById('loadPrevBar');
-      if (loadingEl) loadingEl.classList.add('show');
-      if (bar) bar.style.display = 'none';
 
       try {
         var resp = await fetch('../' + prevMeta.id + '/index.html');
@@ -1092,8 +1044,6 @@ export function renderModernReader(options: ModernReaderOptions): string {
         console.warn('Auto load prev chapter error:', err);
       } finally {
         isLoadingPrevChapter = false;
-        if (loadingEl) loadingEl.classList.remove('show');
-        updatePrevBar();
       }
     }
 
@@ -1106,8 +1056,6 @@ export function renderModernReader(options: ModernReaderOptions): string {
       if (!nextMeta) return;
 
       isLoadingNextChapter = true;
-      var loadingEl = document.getElementById('loadingNextChapter');
-      if (loadingEl) loadingEl.classList.add('show');
 
       try {
         var resp = await fetch('../' + nextMeta.id + '/index.html');
@@ -1167,9 +1115,34 @@ export function renderModernReader(options: ModernReaderOptions): string {
         console.warn('Auto load next chapter error:', err);
       } finally {
         isLoadingNextChapter = false;
-        if (loadingEl) loadingEl.classList.remove('show');
       }
     }
+
+    window.addEventListener('wheel', function(e) {
+      if (!isInfiniteScroll || isLoadingPrevChapter || loadedChapterIndices[0] <= 1) return;
+      var st = document.documentElement.scrollTop || document.body.scrollTop;
+      if (st <= 20 && e.deltaY < -15) {
+        loadPrevChapterSeamlessly();
+      }
+    }, { passive: true });
+
+    var touchStartY = 0;
+    window.addEventListener('touchstart', function(e) {
+      if (e.touches && e.touches.length > 0) {
+        touchStartY = e.touches[0].clientY;
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', function(e) {
+      if (!isInfiniteScroll || isLoadingPrevChapter || loadedChapterIndices[0] <= 1) return;
+      var st = document.documentElement.scrollTop || document.body.scrollTop;
+      if (st <= 20 && e.touches && e.touches.length > 0) {
+        var touchCurrentY = e.touches[0].clientY;
+        if (touchCurrentY - touchStartY > 40) {
+          loadPrevChapterSeamlessly();
+        }
+      }
+    }, { passive: true });
 
     window.addEventListener('scroll', function() {
       var st = document.documentElement.scrollTop || document.body.scrollTop;
@@ -1188,11 +1161,11 @@ export function renderModernReader(options: ModernReaderOptions): string {
       var scrollingUp = st < lastScrollY;
       lastScrollY = st;
 
-      if (isInfiniteScroll && (sh - st) < 900) {
+      if (isInfiniteScroll && (sh - st) < 1200) {
         loadNextChapterSeamlessly();
       }
 
-      if (isInfiniteScroll && scrollingUp && hasUserScrolled && st < 360 && loadedChapterIndices[0] > 1 && !isLoadingPrevChapter) {
+      if (isInfiniteScroll && scrollingUp && hasUserScrolled && st < 500 && loadedChapterIndices[0] > 1 && !isLoadingPrevChapter) {
         loadPrevChapterSeamlessly();
       }
 
