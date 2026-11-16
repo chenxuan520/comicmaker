@@ -91,7 +91,20 @@ export class OpenAiProvider implements AiProvider {
       usage = { input_tokens: 0, output_tokens: 0, ...usage, image_count: response.data.length, input_image_count: request.images.length };
     }
     const encoded = response.data?.[0]?.b64_json;
-    if (!encoded) throw new ImageResponseError("Image response did not contain b64_json; the configured service must return PNG bytes", usage);
+    if (!encoded) {
+      const imageUrl = response.data?.[0]?.url;
+      if (!imageUrl) throw new ImageResponseError("Image response did not contain b64_json or an image URL", usage);
+      try {
+        const url = new URL(imageUrl);
+        if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Invalid image download URL");
+        const signal = AbortSignal.any([AbortSignal.timeout(this.options.imageTimeout), ...(request.signal ? [request.signal] : [])]);
+        const download = await fetch(url, { signal, credentials: "omit" });
+        if (!download.ok) throw new Error(`Image download returned HTTP ${download.status}`);
+        return { data: new Uint8Array(await download.arrayBuffer()), usage };
+      } catch {
+        throw new ImageResponseError("Generated image could not be downloaded; fees remain recorded", usage);
+      }
+    }
     try {
       return { data: decodeBase64(encoded), usage };
     } catch {
