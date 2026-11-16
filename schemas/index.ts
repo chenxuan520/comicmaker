@@ -379,6 +379,7 @@ export const configSchema = z
           .passthrough(),
       })
       .passthrough(),
+    cover: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
     refs: z
       .object({
         candidates: positiveInteger,

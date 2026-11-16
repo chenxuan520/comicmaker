@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -73,5 +73,7 @@ export class MockAi implements AiProvider {
 export async function fixture(provider?: AiProvider) {
   const root = await mkdtemp(join(process.env.COMIC_TEST_TEMP ?? tmpdir(), "comic-test-"));
   const workspace = await WorkspaceRuntime.create({ repository, workspace: root, provider });
+  const configPath = join(root, "config.yaml");
+  await writeFile(configPath, (await readFile(configPath, "utf8")).replace("cover:\n  enabled: true", "cover:\n  enabled: false"));
   return { root, workspace, close: async () => { await workspace.close(); await rm(root, { recursive: true, force: true }); } };
 }

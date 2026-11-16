@@ -6,6 +6,7 @@ import { generateImage, recoverPendingImages, sha256 } from "../image.js";
 import { structuredCall } from "../llm.js";
 import { buildPagePrompt } from "../promptBuilder.js";
 import { reviewAttempt, type ReviewResult } from "../review.js";
+import { generateCover, getCover } from "./cover.js";
 import { pageFile, type Attempt, type Context, type Page, type PageStoryboard } from "../types.js";
 
 async function rewritePage(ctx: Context, row: Page, page: PageStoryboard, refusalId: string): Promise<PageStoryboard> {
@@ -95,6 +96,9 @@ export async function renderChapter(ctx: Context, chapterNumber: number | string
   const chapter = await getChapter(ctx, chapterNumber);
   const pages = await ctx.db.all<Page>("SELECT * FROM pages WHERE chapter_id = ? ORDER BY page_no", [chapter.id]);
   if (!pages.length) throw new PreconditionError("Adapt and review the chapter before rendering it");
+  await requireStoryboardReady(ctx, chapter.id);
+  if (ctx.config.cover.enabled && !await getCover(ctx)) await buildPagePrompt(ctx, JSON.parse(pages[0].storyboard));
+  const cover = await generateCover(ctx);
   let cursor = 0;
   let failure: unknown;
   const results: Awaited<ReturnType<typeof renderPage>>[] = [];
@@ -108,7 +112,7 @@ export async function renderChapter(ctx: Context, chapterNumber: number | string
   await Promise.all(workers);
   if (failure) throw failure;
   if (options.force || chapter.status !== "exported") await ctx.db.run("UPDATE chapters SET status = 'rendered' WHERE id = ?", [chapter.id]);
-  return { chapter: chapter.id, pages: results.sort((a, b) => a.id.localeCompare(b.id)), flagged: results.filter((page) => page.status === "flagged").map((page) => page.id) };
+  return { chapter: chapter.id, pages: results.sort((a, b) => a.id.localeCompare(b.id)), flagged: results.filter((page) => page.status === "flagged").map((page) => page.id), ...(cover.cover ? { cover: cover.cover } : {}) };
 }
 
 export async function redoPage(ctx: Context, pageId: string, note?: string) {

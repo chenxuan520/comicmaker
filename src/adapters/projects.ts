@@ -1,6 +1,6 @@
 import { lstat, mkdir, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { stringify } from "yaml";
+import { parse, stringify } from "yaml";
 import { PreconditionError } from "../core/errors.js";
 import type { ProjectDefinition, ProjectHandle, ProjectListItem, ProjectStore } from "../core/ports.js";
 import { LocalProjectFs } from "./projectFs.js";
@@ -104,7 +104,14 @@ export class LocalProjectStore implements ProjectStore {
         }>(`SELECT (SELECT value FROM meta WHERE key = 'title') AS title,
           COUNT(*) AS chapter_count,
           COALESCE(SUM(status = 'exported'), 0) AS completed_chapters FROM chapters`);
-        projects.push({ id: entry.name, ...progress });
+        let title = progress.title;
+        try {
+          const configured = parse(await handle.fs.readText("project.yaml") ?? "");
+          if (typeof configured?.title === "string") title = configured.title;
+        } catch {}
+        const version = await handle.db.get<{ value: string }>("SELECT value FROM meta WHERE key = 'cover.source_version'");
+        const cover = await handle.db.get<{ path: string }>("SELECT path FROM refs WHERE kind = 'cover' AND target_id = ? AND path IS NOT NULL AND status != 'rejected' ORDER BY id DESC LIMIT 1", [JSON.stringify([version?.value ?? "project", title])]);
+        projects.push({ id: entry.name, ...progress, title, ...(cover ? { cover_path: cover.path } : {}) });
       } finally {
         await handle.db.close();
       }

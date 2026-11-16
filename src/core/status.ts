@@ -1,4 +1,5 @@
 import { getBible } from "./data.js";
+import { coverRetryRequired, getCover } from "./steps/cover.js";
 import { chapterId, readingFile, STRIP_LAYOUT, type Chapter, type Context, type Page, type Ref, type ReadingImages, type UploadedImages } from "./types.js";
 
 export async function getStatus(ctx: Context, chapterNumber?: number | string) {
@@ -37,8 +38,9 @@ export async function getStatus(ctx: Context, chapterNumber?: number | string) {
       reviews: byPage.get(page.id) ?? [],
     };
   }));
-  const refs = await ctx.db.all<Ref>("SELECT * FROM refs WHERE path IS NOT NULL ORDER BY kind, target_id, id");
+  const refs = await ctx.db.all<Ref>("SELECT * FROM refs WHERE path IS NOT NULL AND kind != 'cover' ORDER BY kind, target_id, id");
   const reviewMeta = await ctx.db.all<{ key: string; value: string }>("SELECT * FROM meta WHERE key LIKE 'storyboard.review.%'");
   const warnings = reviewMeta.filter((row) => { const value = JSON.parse(row.value); return value.completed && !value.passed; }).map((row) => `Storyboard review warning for chapter ${row.key.split(".").at(-1)}`);
-  return { project: ctx.project, comic_format: ctx.config.storyboard.format, chapters: chapters.map(chapter => ({ ...chapter, title: cleanTitle(chapter.title) })), pages, refs, ...await getBible(ctx), warnings, flagged: pages.filter((page) => page.status === "flagged").map((page) => page.id), export_options: { pdf: ctx.config.export.pdf, html: ctx.config.export.html, imgbed: ctx.config.export.imgbed } };
+  const cover = await getCover(ctx);
+  return { project: ctx.project, cover, cover_retry_required: !cover && await coverRetryRequired(ctx), cover_enabled: ctx.config.cover.enabled, comic_format: ctx.config.storyboard.format, chapters: chapters.map(chapter => ({ ...chapter, title: cleanTitle(chapter.title) })), pages, refs, ...await getBible(ctx), warnings, flagged: pages.filter((page) => page.status === "flagged").map((page) => page.id), export_options: { pdf: ctx.config.export.pdf, html: ctx.config.export.html, imgbed: ctx.config.export.imgbed } };
 }

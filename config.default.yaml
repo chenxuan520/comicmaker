@@ -63,6 +63,9 @@ review:
   sfx_patterns: ['^(?:砰|轰|啪|咔|嗖|唰|哗|嘭|铛|咚|嘶|呼|嗡|叮|噗|嘀|吱|咕|哒|嘣|喀)+[！。…～]*$']
   weights: { text_error: 30, major: 20, minor: 5, identity: 40, color: 20, panel_mismatch: 50 }
 
+cover:
+  enabled: true
+
 refs:
   candidates: 3
   sheet_layout: "3x3"

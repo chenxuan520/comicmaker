@@ -56,7 +56,7 @@ export default function App() {
     if (action === 'lock' || action === 'export') return true;
     if (!workspace || workspaceError || (selectedId && !project)) return false;
     if (action === 'prepare' || action === 'adapt') return apiKeys.text;
-    if (action === 'refs') return apiKeys.image;
+    if (action === 'refs' || action === 'cover') return apiKeys.image;
     return apiKeys.image && (!reviewRequired || apiKeys.vision) && (action !== 'run' || apiKeys.text);
   }
 

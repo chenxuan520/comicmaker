@@ -169,6 +169,18 @@ pnpm comic lock LOCATION_REF_ID
 
 省略 `--target` 会为该类型所有未锁定项补齐候选。每个 `(kind, target_id)` 最多一张 locked；锁定后其他候选标为 rejected，但图片保留。**不能替换、解除、修改或删除已锁定参考图**；`refs gen --force` 仅追加候选，不解除锁定。
 
+### 每本书一张封面
+
+默认 `cover.enabled: true`。首次执行 `render` / `run` 时生成一张独立封面，后续章节复用，不按 `refs.candidates` 生成多张。封面沿用当前生图模型、质量和预算检查，使用锁定画风及可用的初始角色参考；不占正文画页，也不会让单章导出重复插入封面。书库显示真实封面，尚未生成时保留文字封面占位。
+
+新建、导入、查看状态和导出本身仍不调用生图。已完成的书可在工作台点“生成全书封面”，或单独执行：
+
+```sh
+pnpm comic cover gen -p demo-book --json
+```
+
+重复执行复用已存原图，不再收费；可设 `cover.enabled: false` 关闭封面生成。失败后先查账本和已存原图，保存成功的图片可免费恢复；只有明确确认再试或重绘时使用 `cover gen --force`，追加新封面及费用，不覆盖旧原图；新图失败时仍保留旧的成功封面。更换书名或强制导入新原稿会生成新的封面目标，历史封面保留。封面生成不等于封面内容或全书人工验收通过。
+
 ### 制作与重做
 
 提取遗漏整个人物或地点时，可用 `pnpm comic settings add -p demo-book --file missing-settings.json --json` 零费用补录。文件使用提取结果的结构 `{ "characters": [...], "locations": [...] }`，只放缺项；人物字段与 `bible/characters.json` 相同，地点字段与 `bible/locations.json` 相同。命令校验角色证据段号、适用章、服装归属及 ID，整批通过后追加，不调用模型，不覆盖已有设定、参考图或章节状态；`--force` 也不允许覆盖。原文是否支持这些设定由操作者先核实，新增参考图仍需单独生成并锁定。
@@ -248,6 +260,7 @@ pnpm comic export -p demo-book --chapter 1 --force --json
 | `prepare` | 可选 `--force` | 提取设定、生成摘要 |
 | `settings add` | `--file <JSON路径>` 必填 | 零费用追加遗漏的人物或地点，校验证据与章号，不覆盖已有设定 |
 | `refs gen` | `--kind style\|outfit\|location`，可选 `--target <id>`、`--force` | 生成候选 |
+| `cover gen` | 可选 `--force` 明确重绘或重试 | 补一张全书封面，默认复用已有图 |
 | `refs list` / `lock <ref_id>` | list 可选 `--status candidate\|locked\|rejected` | 列素材 / 锁定选定的图 |
 | `outfits include <outfit_id>` | `--chapter <n>`、`--paragraph <原文段号>` 必填 | 给既有服装追加本章关联与原文证据，不调用模型或改参考图 |
 | `locations include <location_id>` | `--chapter <n>`、`--paragraph <原文段号>` 必填 | 为原文明示的既有地点补本章关联，不调用模型或改参考图 |
@@ -298,6 +311,7 @@ pnpm comic export -p demo-book --chapter 1 --force --json
 | `image` 参考与执行 | ref_strategy `by_frequency`，max_refs `3`，include_style_ref / include_location_ref `true`，concurrency `2`，max_refusals `2` |
 | `image` / `llm` 网络 | timeout_sec 均 `300`，retry_backoff_sec 均 `[2, 4, 8, 16, 32]` |
 | `llm` / `summary` | full_book_max_tokens `260000`，chunk_chapters `20`，chars_per_token `2`，schema_retry `1`；summary.max_chars `200` |
+| `cover` | enabled `true`，首次 `render` / `run` 生成一张全书封面，后续复用 |
 | `refs` | candidates `3`，sheet_layout `3x3`，style_sample_panels `4`，style_sample_text `师父，弟子来了。` |
 | `storyboard` | format `page`，min_panels / max_panels `3 / 5`，max_bubble_chars `15`，max_bubbles_per_panel `2`，max_chars_per_page `3`，max_revisions `2`，reading_order `ltr`；coverage_min_importance `2`，emphasis_min_importance `3`，large_panel_sizes `[large, wide]` |
 | `review` | enabled `true`，base_score `100`，max_attempts `3`，checks 全开，min_identity `0.75`，min_color `0.7`，max_text_errors / max_major_issues `0 / 0`，missing_character `fail`；sfx_patterns 见默认文件 |

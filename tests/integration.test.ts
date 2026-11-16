@@ -65,7 +65,7 @@ async function localFixture(t: TestContext, provider?: AiProvider) {
   catch { pdf = false; t.diagnostic("Arial Unicode is unavailable; PDF disabled for this fixture, HTML still verified"); }
   await writeFile(join(f.root, "config.yaml"), stringify(mergeConfig(
     { openai: { base_url: `${mock.url}/v1`, api_key_env: "OPENAI_API_KEY" } },
-    { refs: { candidates: 1 }, budget: { limit_usd: 10, period: "none" },
+    { cover: { enabled: false }, refs: { candidates: 1 }, budget: { limit_usd: 10, period: "none" },
       image: { timeout_sec: 5, retry_backoff_sec: [] }, llm: { timeout_sec: 5, retry_backoff_sec: [] },
       export: { pdf, font_path: pdf ? fontPath : null, reading_image_kb: null } },
   )));
@@ -151,6 +151,20 @@ async function assertPdf(data: Uint8Array) {
   assert.deepEqual(document.getPage(0).getSize(), { width: 1, height: 1 });
   assert.deepEqual(document.getPage(1).getSize(), { width: 1024, height: 1536 });
 }
+
+test("CLI reference candidates exclude independently generated book covers", async (t) => {
+  const f = await localFixture(t);
+  await configure(join(f.root, "config.yaml"), { cover: { enabled: true } });
+  await writeFile(join(f.root, "input.txt"), novel);
+  await cli(f.root, ["new", "book", "--title", "Book", "--json"]);
+  await cli(f.root, ["import", "-p", "book", "--novel", join(f.root, "input.txt"), "--json"]);
+  const styles = await cli<{ refs: Ref[] }>(f.root, ["refs", "gen", "-p", "book", "--kind", "style", "--json"]);
+  await cli(f.root, ["lock", "-p", "book", styles.refs[0].id, "--json"]);
+  const cover = await cli<{ cover: Ref }>(f.root, ["cover", "gen", "-p", "book", "--json"]);
+  assert.equal(cover.cover.kind, "cover");
+  const candidates = await cli<{ refs: Ref[] }>(f.root, ["refs", "list", "-p", "book", "--status", "candidate", "--json"]);
+  assert.deepEqual(candidates.refs, []);
+});
 
 test("official OpenAI SDK uses local structured-output and PNG generation/edit HTTP contracts", async (t) => {
   const mock = await startMockOpenai();

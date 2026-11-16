@@ -4,7 +4,7 @@ import type { ApiProblem } from './types';
 
 export const actionNames: Record<string, string> = {
   prepare: '全书预处理', refs: '参考图生成', lock: '锁定设定', adapt: '章节改编',
-  render: '画页生成', run: '整章制作', export: '章节导出', redo: '单页重绘',
+  render: '画页生成', run: '整章制作', export: '章节导出', redo: '单页重绘', cover: '全书封面生成',
 };
 
 export const sourceNames: Record<string, string> = {

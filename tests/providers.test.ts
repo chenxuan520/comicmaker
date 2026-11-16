@@ -75,7 +75,7 @@ async function providerFixture(t: TestContext, provider: "seedream" | "qwen" = "
     models: { extract: "deepseek-flash", adapt: "deepseek-flash", storyboard: "deepseek-flash", storyboard_review: "deepseek-flash", rewrite: "deepseek-flash" },
     image: { provider, model, base_url: `${url}/${provider}/api/${provider === "qwen" ? "v1" : "v3"}`, api_key_env: "COMIC_TEST_IMAGE_KEY", size: "1664x2496", timeout_sec: 5, retry_backoff_sec: [] },
     pricing: { "deepseek-flash": { input: 1, output: 2 }, [model]: { per_image: 0.04 } },
-    refs: { candidates: 1 }, export: { pdf: false, reading_image_kb: null }, budget: { limit_usd: 10, period: "none" },
+    cover: { enabled: false }, refs: { candidates: 1 }, export: { pdf: false, reading_image_kb: null }, budget: { limit_usd: 10, period: "none" },
   }));
   await writeFile(join(f.root, ".env"), "COMIC_TEST_TEXT_KEY=text-test-key\nCOMIC_TEST_VISION_KEY=vision-test-key\nCOMIC_TEST_IMAGE_KEY=image-test-key\n");
   await createProject(f.workspace.store, "book", "Book");

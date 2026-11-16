@@ -259,6 +259,8 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .jacket-rule { position: absolute; height: 230px; top: 43px; right: 22px; border-right: 1px solid currentColor; opacity: .25; }
 .jacket-footer { position: absolute; bottom: 18px; left: 20px; font-size: 9px; letter-spacing: .2em; }
 .book-jacket > svg { position: absolute; right: 20px; bottom: 17px; }
+.book-jacket.jacket-with-cover { padding: 0; }
+.jacket-with-cover img { width: 100%; height: 100%; object-fit: contain; }
 .project-card-copy { padding: 20px; }
 .project-card-title { display: flex; justify-content: space-between; align-items: center; gap: 9px; }
 .project-card-title h2 { font-size: 19px; }

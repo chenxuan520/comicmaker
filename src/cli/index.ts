@@ -9,6 +9,7 @@ import { budgetReport } from "../core/budget.js";
 import { createProject, importNovel } from "../core/project.js";
 import { addLocationChapter, addOutfitChapter, addSettings, prepareBook } from "../core/steps/prepare.js";
 import { generateRefs, lockRef } from "../core/steps/refs.js";
+import { generateCover } from "../core/steps/cover.js";
 import { adaptChapter, patchStoryboard } from "../core/steps/adapt.js";
 import { redoPage, renderChapter, restorePageAttempt } from "../core/steps/render.js";
 import { exportChapter } from "../core/steps/export.js";
@@ -73,10 +74,11 @@ action(locations.command("include <location_id>").requiredOption("--chapter <n>"
 const refs = program.command("refs");
 action(refs.command("gen").requiredOption("--kind <kind>").option("--target <id>"), true, async (_, flags, __, ctx) => {
   if (!["style", "outfit", "location"].includes(flags.kind!)) throw new PreconditionError("kind must be style, outfit or location");
-  return generateRefs(ctx!, { kind: flags.kind as Ref["kind"], target: flags.target, force: flags.force });
+  return generateRefs(ctx!, { kind: flags.kind as Exclude<Ref["kind"], "cover">, target: flags.target, force: flags.force });
 });
-action(refs.command("list").option("--status <status>"), true, async (_, flags, __, ctx) => ({ refs: await ctx!.db.all(`SELECT * FROM refs WHERE path IS NOT NULL ${flags.status ? "AND status = ?" : ""} ORDER BY kind, target_id, id`, flags.status ? [flags.status] : []) }));
+action(refs.command("list").option("--status <status>"), true, async (_, flags, __, ctx) => ({ refs: await ctx!.db.all(`SELECT * FROM refs WHERE path IS NOT NULL AND kind != 'cover' ${flags.status ? "AND status = ?" : ""} ORDER BY kind, target_id, id`, flags.status ? [flags.status] : []) }));
 action(program.command("lock <ref_id>"), true, async ([id], _, __, ctx) => lockRef(ctx!, id));
+action(program.command("cover").command("gen"), true, async (_, flags, __, ctx) => generateCover(ctx!, { force: flags.force }));
 action(program.command("adapt").requiredOption("--chapter <n>"), true, async (_, flags, __, ctx) => adaptChapter(ctx!, flags.chapter!, { force: flags.force }));
 const storyboard = program.command("storyboard");
 action(storyboard.command("patch").requiredOption("--chapter <n>").requiredOption("--file <path>"), true, async (_, flags, __, ctx) => patchStoryboard(ctx!, flags.chapter!, JSON.parse(await readFile(resolve(flags.file!), "utf8")).pages));

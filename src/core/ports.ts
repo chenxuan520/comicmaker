@@ -42,6 +42,7 @@ export interface ProjectListItem {
   title: string;
   chapter_count: number;
   completed_chapters: number;
+  cover_path?: string;
 }
 
 export interface ProjectStore {

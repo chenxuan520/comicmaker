@@ -18,6 +18,7 @@ export interface ProjectSummary {
   chapter_count: number;
   completed_chapters: number;
   updated_at?: string;
+  cover_url?: string;
 }
 
 export interface Job {
@@ -98,6 +99,9 @@ export interface Entity {
 export interface ProjectDetail {
   project: { id: string; title: string; style_desc: string };
   comic_format: ComicFormat;
+  cover?: { id: string; path: string; sha256: string; image_url: string } | null;
+  cover_enabled?: boolean;
+  cover_retry_required?: boolean;
   schedule?: ChapterSchedule | null;
   api_keys?: { text: boolean; vision: boolean; image: boolean };
   review_required?: boolean;
@@ -123,7 +127,7 @@ export interface Budget {
 }
 
 export interface ActionInput {
-  action: 'prepare' | 'refs' | 'lock' | 'adapt' | 'render' | 'run' | 'export' | 'redo';
+  action: 'prepare' | 'refs' | 'lock' | 'adapt' | 'render' | 'run' | 'export' | 'redo' | 'cover';
   chapter?: number;
   kind?: RefKind;
   target?: string;

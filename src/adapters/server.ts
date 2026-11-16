@@ -13,6 +13,7 @@ import { adaptChapter } from "../core/steps/adapt.js";
 import { exportChapter } from "../core/steps/export.js";
 import { prepareBook } from "../core/steps/prepare.js";
 import { generateRefs, lockRef } from "../core/steps/refs.js";
+import { generateCover } from "../core/steps/cover.js";
 import { redoPage, renderChapter } from "../core/steps/render.js";
 import { aiKeys } from "./ai.js";
 import { apiKey, loadConfig, mergeConfig, parseConfigYaml, validateConfig } from "./config.js";
@@ -21,7 +22,7 @@ import { LocalTemplateStore } from "./templates.js";
 import { ChapterScheduler, readChapterSchedule } from "./scheduler.js";
 
 const actionSchema = z.object({
-  action: z.enum(["prepare", "refs", "lock", "adapt", "render", "run", "export", "redo"]),
+  action: z.enum(["prepare", "refs", "lock", "adapt", "render", "run", "export", "redo", "cover"]),
   chapter: z.number().int().positive().optional(), kind: z.enum(["style", "outfit", "location"]).optional(),
   target: z.string().optional(), ref_id: z.string().optional(), page_id: z.string().optional(),
   note: z.string().optional(), force: z.boolean().optional(), ignore_limit: z.boolean().optional(),
@@ -104,6 +105,7 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
         switch (action.action) {
           case "prepare": active.result = await prepareBook(ctx, { force: action.force }); break;
           case "refs": active.result = await generateRefs(ctx, { kind: requireField(action.kind, "kind"), target: action.target, force: action.force }); break;
+          case "cover": active.result = await generateCover(ctx, { force: action.force }); break;
           case "lock": active.result = await lockRef(ctx, requireField(action.ref_id, "ref_id")); break;
           case "adapt": active.result = await adaptChapter(ctx, requireField(action.chapter, "chapter"), { force: action.force }); break;
           case "render": active.result = await renderChapter(ctx, requireField(action.chapter, "chapter"), { force: action.force }); break;
@@ -159,7 +161,8 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
       const limit = loaded.config.web.max_upload_mb * 1024 * 1024;
       const jsonBody = async () => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(await body(request, limit)));
       if (request.method === "GET" && url.pathname === "/api/workspace") {
-        replyJson(200, { projects: await workspace.store.list(), current_project: await workspace.currentProject(), api_key_configured: Boolean(await apiKey(workspace.root, loaded.config.openai)), ...await modelReadiness(workspace.root, loaded.config), workspace_path: workspace.root, settings: { poll_interval_ms: loaded.config.web.poll_interval_ms }, job }); return;
+        const projects = (await workspace.store.list()).map(({ cover_path, ...project }) => ({ ...project, ...(cover_path ? { cover_url: `/api/projects/${encodeURIComponent(project.id)}/files/${cover_path.split("/").map(encodeURIComponent).join("/")}` } : {}) }));
+        replyJson(200, { projects, current_project: await workspace.currentProject(), api_key_configured: Boolean(await apiKey(workspace.root, loaded.config.openai)), ...await modelReadiness(workspace.root, loaded.config), workspace_path: workspace.root, settings: { poll_interval_ms: loaded.config.web.poll_interval_ms }, job }); return;
       }
       if (request.method === "GET" && url.pathname === "/api/budget") { replyJson(200, await budgetReport(workspace.ledger, loaded.config.budget)); return; }
       if (url.pathname === "/api/jobs/current" && request.method === "GET") { replyJson(200, { job }); return; }
@@ -216,7 +219,7 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
           if (parts.length === 3 && request.method === "GET") {
             const status = await getStatus(handle.ctx);
             const fileUrl = (path: string) => `/api/projects/${encodeURIComponent(id)}/files/${path.split("/").map(encodeURIComponent).join("/")}`;
-            replyJson(200, { ...status, schedule: await readChapterSchedule(handle.ctx.db), ...await modelReadiness(workspace.root, handle.ctx.config), pages: status.pages.map((page) => ({ ...page, image_url: page.image_path ? `${fileUrl(page.reading_image_path ?? page.image_path)}?attempt=${page.final_attempt_id}${page.reading_image_path ? `&kb=${handle.ctx.config.export.reading_image_kb}&max_width=${handle.ctx.config.export.reading_max_width}` : ""}` : null, original_image_url: page.image_path ? `${fileUrl(page.image_path)}?attempt=${page.final_attempt_id}` : null })), refs: status.refs.map((ref) => ({ ...ref, image_url: fileUrl(ref.path!) })) }); return;
+            replyJson(200, { ...status, cover: status.cover ? { ...status.cover, image_url: fileUrl(status.cover.path!) } : null, schedule: await readChapterSchedule(handle.ctx.db), ...await modelReadiness(workspace.root, handle.ctx.config), pages: status.pages.map((page) => ({ ...page, image_url: page.image_path ? `${fileUrl(page.reading_image_path ?? page.image_path)}?attempt=${page.final_attempt_id}${page.reading_image_path ? `&kb=${handle.ctx.config.export.reading_image_kb}&max_width=${handle.ctx.config.export.reading_max_width}` : ""}` : null, original_image_url: page.image_path ? `${fileUrl(page.image_path)}?attempt=${page.final_attempt_id}` : null })), refs: status.refs.map((ref) => ({ ...ref, image_url: fileUrl(ref.path!) })) }); return;
           }
           if (parts[3] === "import" && request.method === "POST") {
             const imported = await importNovel(handle.ctx, await body(request, limit), { force: url.searchParams.get("force") === "true" });

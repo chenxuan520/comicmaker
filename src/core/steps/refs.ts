@@ -6,7 +6,7 @@ import { isRefusal } from "../calls.js";
 import type { ImageInput } from "../ports.js";
 import type { Context, Ref } from "../types.js";
 
-export async function generateRefs(ctx: Context, options: { kind: Ref["kind"]; target?: string; force?: boolean }) {
+export async function generateRefs(ctx: Context, options: { kind: Exclude<Ref["kind"], "cover">; target?: string; force?: boolean }) {
   const bible = await getBible(ctx);
   if (options.kind !== "style") {
     if (!await ctx.db.get("SELECT value FROM meta WHERE key = 'prepare.extract.completed'")) throw new PreconditionError("Prepare the novel before generating character or location references");
@@ -56,6 +56,7 @@ export async function generateRefs(ctx: Context, options: { kind: Ref["kind"]; t
 export async function lockRef(ctx: Context, id: string) {
   const ref = await ctx.db.get<Ref>("SELECT * FROM refs WHERE id = ?", [id]);
   if (!ref?.path || !await ctx.fs.readBytes(ref.path)) throw new PreconditionError("Reference image not found");
+  if (ref.kind === "cover") throw new PreconditionError("Book covers are selected by cover generation, not locked as model references");
   if (ref.status === "locked") return { ref, skipped: true };
   if (ref.status !== "candidate") throw new PreconditionError("Only candidate references can be locked");
   const existing = await ctx.db.get<Ref>("SELECT * FROM refs WHERE kind = ? AND target_id = ? AND status = 'locked'", [ref.kind, ref.target_id]);

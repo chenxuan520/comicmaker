@@ -35,7 +35,7 @@ export interface Chapter {
 
 export interface Ref {
   id: string;
-  kind: "style" | "outfit" | "location";
+  kind: "style" | "outfit" | "location" | "cover";
   target_id: string;
   path: string | null;
   sha256: string | null;

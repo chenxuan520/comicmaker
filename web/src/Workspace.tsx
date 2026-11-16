@@ -1,7 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { ArrowRight, ArrowUpRight, BookOpen, Check, FileText, FolderOpen, LoaderCircle, Plus, Upload } from 'lucide-react';
 import { problem, projectUrl, request, send } from './api';
-import { ComicPlaceholder, dateTime, Dialog, ErrorNotice, RunOptions, StatusBadge } from './components';
+import { AssetImage, ComicPlaceholder, dateTime, Dialog, ErrorNotice, RunOptions, StatusBadge } from './components';
 import type { ActionProps, ApiProblem, ProjectDetail, View, Workspace } from './types';
 
 export function Studio({ workspace, project, onNew, onView, onChapter, onImported, ...actions }: ActionProps & {
@@ -27,6 +27,8 @@ export function Studio({ workspace, project, onNew, onView, onChapter, onImporte
             {Boolean(workspace?.projects.length) && <button className="button button-quiet" onClick={() => onView('projects')}>打开作品书架<ArrowRight size={16} aria-hidden="true" /></button>}
           </div>}
           {project && <div className="hero-project-meta"><FolderOpen size={15} aria-hidden="true" /><span>projects/{project.project.id}</span><span className="meta-dot" />文件留在本地</div>}
+          {project && !project.cover && <button className="button button-small button-quiet" disabled={actions.busy || !actions.canGenerate('cover') || project.cover_enabled === false || !project.chapters.length || !project.refs.some((ref) => ref.kind === 'style' && ref.status === 'locked')} onClick={() => actions.onAction({ action: 'cover', force: Boolean(project.cover_retry_required) })}>{project.cover_retry_required ? '确认重试封面' : '生成全书封面'}</button>}
+          {project?.cover && <><a className="text-link" href={project.cover.image_url} target="_blank" rel="noreferrer">查看全书封面<ArrowUpRight size={14} aria-hidden="true" /></a><button className="button button-small button-quiet" disabled={actions.busy || !actions.canGenerate('cover') || project.cover_enabled === false} onClick={() => actions.onAction({ action: 'cover', force: true })}>重绘封面</button></>}
         </div>
         <div className="hero-art"><ComicPlaceholder /><span className="hero-seal" aria-hidden="true">故事<br />成书</span></div>
       </section>
@@ -152,12 +154,12 @@ export function Projects({ workspace, selectedId, onSelect, onNew }: {
       <div className="library-label"><span>{workspace.projects.length} 部作品</span><span title={workspace.workspace_path}>{workspace.workspace_path}</span></div>
       <div className="project-grid">
         {workspace.projects.map((project, index) => <button className={`project-card ${selectedId === project.id ? 'project-card-active' : ''}`} key={project.id} onClick={() => onSelect(project.id)}>
-          <div className={`book-jacket jacket-${index % 3}`}><span className="jacket-id">{project.id}</span><span className="jacket-title">{project.title}</span><span className="jacket-rule" /><span className="jacket-footer">小说 · 漫画改编</span><BookOpen size={23} strokeWidth={1.2} aria-hidden="true" /></div>
+          <div className={`book-jacket jacket-${index % 3}${project.cover_url ? ' jacket-with-cover' : ''}`}>{project.cover_url ? <AssetImage src={project.cover_url} alt={`${project.title}封面`} /> : <><span className="jacket-id">{project.id}</span><span className="jacket-title">{project.title}</span><span className="jacket-rule" /><span className="jacket-footer">小说 · 漫画改编</span><BookOpen size={23} strokeWidth={1.2} aria-hidden="true" /></>}</div>
           <div className="project-card-copy"><div className="project-card-title"><h2>{project.title}</h2><ArrowUpRight size={19} aria-hidden="true" /></div><p>{project.chapter_count ? `${project.completed_chapters} / ${project.chapter_count} 章已完成` : '尚未导入原稿'}</p><div className="book-progress" aria-label={`${project.completed_chapters} 章已完成，共 ${project.chapter_count} 章`}><span style={{ width: `${project.chapter_count ? Math.min(100, project.completed_chapters / project.chapter_count * 100) : 0}%` }} /></div><div className="project-card-meta"><span>{project.updated_at ? `${dateTime(project.updated_at)} 更新` : project.id}</span>{selectedId === project.id && <span className="selected-label">当前作品</span>}</div></div>
         </button>)}
         <button className="project-add-card" onClick={onNew}><span><Plus size={25} strokeWidth={1.4} aria-hidden="true" /></span><strong>{workspace.projects.length ? '留一个位置给下个故事' : '书架的第一本，等你来写'}</strong><small>新建一个本地项目</small></button>
       </div>
-      <p className="library-footnote">封面为文字排版，不是 AI 生成的漫画素材。</p>
+      <p className="library-footnote">每本书制作时默认生成一张 AI 封面，后续章节复用；尚未生成的作品先显示文字排版。</p>
     </div>
   );
 }
