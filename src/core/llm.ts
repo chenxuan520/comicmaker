@@ -21,7 +21,7 @@ export async function structuredCall<T>(ctx: Context, options: {
   const basePrompt = await ctx.prompts.pair(options.template, options.data);
   let prompt = basePrompt;
   const responseFormat = zodResponseFormat(options.schema, options.template.replace(/[^a-zA-Z0-9_-]/g, "_"));
-  const estimate = options.estimate ?? ctx.config.budget.estimates.llm;
+  const estimate = ctx.config.pricing[options.model]?.per_request ?? options.estimate ?? ctx.config.budget.estimates.llm;
   for (let retry = 0; ; retry++) {
     ctx.signal?.throwIfAborted();
     const id = ulid();

@@ -14,7 +14,7 @@ export interface MockOpenaiRequest {
   files: { field: string; name: string; type: string; data: Uint8Array }[];
 }
 
-export async function startMockOpenai() {
+export async function startMockOpenai(imageResponse?: unknown) {
   const requests: MockOpenaiRequest[] = [];
   const server = createServer(async (request, response) => {
     try {
@@ -47,10 +47,10 @@ export async function startMockOpenai() {
           usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
         };
       } else if (request.method === "POST" && ["/v1/images/generations", "/v1/images/edits"].includes(path)) {
-        result = {
+        result = imageResponse === undefined ? {
           created: Math.floor(Date.now() / 1000), data: [{ b64_json: encodeBase64(png) }],
           usage: { input_tokens: 120, input_tokens_details: { text_tokens: 80, image_tokens: 40 }, output_tokens: 20, total_tokens: 140 },
-        };
+        } : imageResponse;
       } else {
         response.writeHead(404, { "Content-Type": "application/json" });
         response.end(JSON.stringify({ error: { message: `Unexpected mock endpoint: ${request.method} ${path}` } }));

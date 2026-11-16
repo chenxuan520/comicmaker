@@ -311,7 +311,7 @@ pnpm comic export -p demo-book --chapter 1 --force --json
 视觉审查未返回分镜中的某个角色时，默认按 0 分判失败并触发重抽；远景或背身角色较多时可设 `review.missing_character: ignore` 忽略未返回项，只对模型实际返回的角色打分，减少无谓重抽。
 
 默认模型名与 `pricing` 只是仓库配置快照。
-先确认服务商与账户实际支持的模型、上下文、图像尺寸和参考图编辑能力，再在覆盖层调整 `models`、`image.model` 与 `pricing`。token 单价单位为美元 / 百万 token，`per_image` 为美元 / 张；均不随服务商自动更新，换服务商或计费档位时须自行核对，缺单价不代表免费。
+先确认服务商与账户实际支持的模型、上下文、图像尺寸和参考图编辑能力，再在覆盖层调整 `models`、`image.model` 与 `pricing`。token 单价单位为美元 / 百万 token，`per_image` 为美元 / 张，`per_request` 为美元 / 次；均不随服务商自动更新，换服务商或计费档位时须自行核对，缺单价不代表免费。
 
 ### 模型服务
 
@@ -369,16 +369,25 @@ image:
 
 Seedream 用 JSON 传入参考图，不走 OpenAI 的 multipart 图片编辑接口；支持 4.0 / 4.5 / 5.0 同协议单图生成。不同版本的尺寸下限不同，4.5 / 5.0 lite 不能沿用默认 `1024x1536`，上例使用 2:3 的 `1664x2496`。Seedream 返回 JPEG 时，适配层保持原始分辨率与解码像素转为 PNG，不再有损压缩；返回 PNG 时保留原字节。千问返回的临时图片 URL 会下载到本地，不把 API 密钥发送给图片存储服务。`image.quality` 只发给 OpenAI 图像接口，Seedream / 千问通过型号与尺寸选择生成规格。
 
-两种原生生图服务按返回的成功图片数结算 `pricing.<模型>.per_image`。例如下面的 **0.04 仅为配置示例，不是服务商报价**，应填写实际美元单价；人民币报价需自行换算：
+生图可按成功图片数结算 `pricing.<模型>.per_image`：OpenAI（含兼容接口）从返回的图片条目记录输出张数、从请求记录输入参考图数量；Seedream / 千问沿用服务返回的 usage 数量。例如下面的 **0.04 仅为配置示例，不是服务商报价**，应填写实际美元单价；人民币报价需自行换算：
 
 ```yaml
 pricing:
   qwen-image-2.0: { per_image: 0.04 }
 ```
 
+**按次收费的兼容服务**可设置 `per_request`，适用于生图、文本或图像审查模型；下面的 **0.04 同样只是示例**：
+
+```yaml
+pricing:
+  gpt-image-2.6-sunburst: { per_request: 0.04 }
+```
+
+`per_request` 优先于 `per_image` 和 token 单价，每次成功模型调用只记一笔固定费用，不按参考图数量再叠加。没有 `per_request` 时，生图的 `per_image` 优先于 token 单价。按次或按张计费不要求 token usage；当前 OpenAI 生图和参考图编辑每次请求均为 `n: 1`，重抽或结构化结果重试会分别产生新的计费调用。实际单价仍需按供应商账单填写，修改配置不回写历史账本。
+
 Qwen-Image 3.0 系列同样使用 `image.provider: qwen`，通过 `image.model: qwen-image-3.0` 或 `qwen-image-3.0-pro` 选择；最多输入 3 张参考图（含画风），按官方默认开启提示词增强，2.x 保持原有行为。支持响应中的 `output_image_count` / `input_image_count`，参考图另收费的模型在 `pricing.<模型>` 设置 `per_input_image`（美元 / 张），与输出的 `per_image` 累加；Seedream Pro 首张输入免费时再设置 `free_input_images: 1`。输出单价须与选择的模型、尺寸档位相符，不自动查询或切换价格。
 
-缺少单价或所需图片计数时仍保留 `budget.estimates.image`，不把兼容字段中的 0 token 当作免费。已生成但下载或解码失败的图片保留费用，不因下载失败自动重发收费生成请求。接口参考：[DeepSeek JSON](https://api-docs.deepseek.com/guides/json_mode)、[DeepSeek 视觉](https://api-docs.deepseek.com/guides/vision)、[Seedream](https://www.volcengine.com/docs/82379/1541523)、[千问生图](https://help.aliyun.com/zh/model-studio/qwen-image-api)、[千问参考图](https://help.aliyun.com/zh/model-studio/qwen-image-edit-api)。
+缺少单价或所需图片计数时仍保留本次预占估算，不把兼容字段中的 0 token 当作免费。已生成但下载或解码失败的图片保留费用，不因下载失败自动重发收费生成请求。接口参考：[DeepSeek JSON](https://api-docs.deepseek.com/guides/json_mode)、[DeepSeek 视觉](https://api-docs.deepseek.com/guides/vision)、[Seedream](https://www.volcengine.com/docs/82379/1541523)、[千问生图](https://help.aliyun.com/zh/model-studio/qwen-image-api)、[千问参考图](https://help.aliyun.com/zh/model-studio/qwen-image-edit-api)。
 
 颜色字段未知时保留 `null`，已知时用中文颜色词加 hex，如 `墨黑 #1A1A1A`，不补写原文未给出的颜色；模板省略空字段。摘要 Structured Outputs 使用对象根 `{"chapters":[{"chapter":1,"summary":"…"}]}`，不是裸数组。
 
@@ -395,7 +404,7 @@ pnpm comic run -p demo-book --chapter 1 --dry-run --json
 
 ## 预算与数据
 
-花费记账始终开启；`budget.limit_usd: null` 只是默认不设上限，不代表免费。工作区上限和项目显式设置的上限同时检查，项目设置不能取消工作区限制。每次收费请求先按预估值入账占用额度，成功后用返回 usage 和配置单价结算；缺 usage / 单价会 warning 并保留估算，超时或中断且费用未知时也保留估算，不能把账本等同于服务商账单。预算闸在请求前按预估值检查，实际结算可能高于预估，不是服务商侧硬限额；模型审查、修订和重抽也可能增加费用。
+花费记账始终开启；`budget.limit_usd: null` 只是默认不设上限，不代表免费。工作区上限和项目显式设置的上限同时检查，项目设置不能取消工作区限制。每次收费请求先按预估值入账占用额度，成功后按配置的按次、按张或 token 单价结算；缺少所选计费方式必需的 usage / 数量或单价时会 warning 并保留估算，超时或中断且费用未知时也保留估算，不能把账本等同于服务商账单。`per_request` 按固定单价预占；OpenAI 的 `per_image` 按当前一张输出及配置的参考图费用预占；其他情况沿用 `budget.estimates`。预算闸在请求前按预估值检查，实际结算可能高于预估，不是服务商侧硬限额；模型审查、修订和重抽也可能增加费用。
 
 周期按配置时区计算：month 的 cycle_start_day 为 `1..31`，不存在的日期钳制到该月最后一天；week 为 `1=周一` 至 `7=周日`；none 为累计总额。预算不足返回 `3` 并保留进度；只有用户明确批准才可用 `--ignore-limit` 临时跳过本次限额，不应自动加这个选项。
 

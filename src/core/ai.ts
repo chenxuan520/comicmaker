@@ -81,11 +81,15 @@ export class OpenAiProvider implements AiProvider {
     const response = await this.response<ImagesResponse>(request.images.length
       ? this.client.images.edit({ ...params, image: request.images.map((image) => new File([image.data.slice().buffer], image.name, { type: "image/png" })) }, options)
       : this.client.images.generate(params as ImageGenerateParamsNonStreaming, options));
-    const usage = response.usage ? {
+    let usage: TokenUsage | undefined = response.usage ? {
       input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens,
       text_input_tokens: response.usage.input_tokens_details?.text_tokens,
       image_input_tokens: response.usage.input_tokens_details?.image_tokens,
     } satisfies TokenUsage : undefined;
+    if (Array.isArray(response.data) && response.data.length > 0 && response.data.every((image) =>
+      (typeof image?.b64_json === "string" && image.b64_json.length > 0) || (typeof image?.url === "string" && image.url.length > 0))) {
+      usage = { input_tokens: 0, output_tokens: 0, ...usage, image_count: response.data.length, input_image_count: request.images.length };
+    }
     const encoded = response.data?.[0]?.b64_json;
     if (!encoded) throw new ImageResponseError("Image response did not contain b64_json; the configured service must return PNG bytes", usage);
     try {

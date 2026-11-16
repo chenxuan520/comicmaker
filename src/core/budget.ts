@@ -118,7 +118,7 @@ export class Budget {
 }
 
 export function priceUsage(
-  pricing: Record<string, { input?: number; output?: number; text_in?: number; image_in?: number; image_out?: number; per_image?: number; per_input_image?: number; free_input_images?: number }>,
+  pricing: Record<string, { input?: number; output?: number; text_in?: number; image_in?: number; image_out?: number; per_request?: number; per_image?: number; per_input_image?: number; free_input_images?: number }>,
   model: string,
   usage: TokenUsage | undefined,
   estimate: number,
@@ -126,6 +126,7 @@ export function priceUsage(
   log: Log,
 ): { cost: number; estimated: boolean } {
   const price = pricing[model];
+  if (price?.per_request !== undefined) return { cost: price.per_request, estimated: false };
   if (image && price?.per_image !== undefined) {
     const count = usage?.image_count;
     const inputCount = price.per_input_image === undefined ? 0 : usage?.input_image_count;

@@ -172,7 +172,7 @@ test("official OpenAI SDK uses local structured-output and PNG generation/edit H
   for (const inputs of [[], images]) {
     const result = await ai.image({ model: "gpt-image-2.6-sunburst", prompt: "Contract image", size: "1024x1536", quality: "high", images: inputs });
     assert.deepEqual(result.data, png);
-    assert.deepEqual(result.usage, { input_tokens: 120, output_tokens: 20, text_input_tokens: 80, image_input_tokens: 40 });
+    assert.deepEqual(result.usage, { input_tokens: 120, output_tokens: 20, text_input_tokens: 80, image_input_tokens: 40, image_count: 1, input_image_count: inputs.length });
   }
   assert.equal(mock.requests.length, 10);
   assert.deepEqual(mock.requests.slice(0, 8).map((request) => request.response_name), cases.map(([name]) => name));

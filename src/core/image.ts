@@ -68,7 +68,10 @@ export async function generateImage(ctx: Context, options: {
   ctx.signal?.throwIfAborted();
   ctx.ai.ready("image");
   const id = ulid();
-  const estimate = ctx.config.budget.estimates.image;
+  const pricing = ctx.config.pricing[ctx.config.image.model];
+  const estimate = pricing?.per_request ?? (ctx.config.image.provider === "openai" && pricing?.per_image !== undefined
+    ? pricing.per_image + Math.max(0, options.images.length - (pricing.free_input_images ?? 0)) * (pricing.per_input_image ?? 0)
+    : ctx.config.budget.estimates.image);
   const spendId = await ctx.budget.begin("image", ctx.config.image.model, estimate, id);
   const sequence = await ctx.db.get<{ seq: number }>(`SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM attempts WHERE ${options.pageId ? "page_id" : "ref_id"} = ?`, [options.pageId ?? options.refId!]);
   const seq = sequence!.seq;
