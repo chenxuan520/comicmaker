@@ -103,7 +103,17 @@ const dialogueSchema = z
   })
   .strict();
 
-const sceneSchema = z
+export const beatTypeSchema = z.enum(["establishing", "dialogue", "action", "reaction", "insert", "climax"]);
+
+const beatSchema = z.object({
+  id: beatIdSchema,
+  src_paras: z.array(positiveInteger),
+  importance: z.number().int().min(1).max(3),
+  action: z.string(),
+  dialogue: z.array(dialogueSchema),
+}).strict();
+
+export const sceneSchema = z
   .object({
     id: sceneIdSchema,
     location_id: entityIdSchema,
@@ -116,26 +126,21 @@ const sceneSchema = z
         })
         .strict(),
     ),
-    beats: z.array(
-      z
-        .object({
-          id: beatIdSchema,
-          src_paras: z.array(positiveInteger),
-          importance: z.number().int().min(1).max(3),
-          action: z.string(),
-          dialogue: z.array(dialogueSchema),
-        })
-        .strict(),
-    ),
+    beats: z.array(beatSchema.extend({ beat_type: beatTypeSchema.nullable().optional() })),
   })
   .strict();
 
 export const adaptationSchema = z
   .object({
-    scenes: z.array(sceneSchema),
+    scenes: z.array(sceneSchema.extend({ beats: z.array(beatSchema) })),
     suggested_pages: positiveInteger,
   })
   .strict();
+
+export const adaptationLlmSchema = adaptationSchema.extend({
+  scenes: z.array(sceneSchema.extend({ beats: z.array(beatSchema.extend({ beat_type: beatTypeSchema })) })),
+  top_moments: z.array(beatIdSchema).max(5),
+});
 
 const pageStoryboardSchema = z
   .object({
@@ -146,7 +151,7 @@ const pageStoryboardSchema = z
         .object({
           id: panelIdSchema,
           row: positiveInteger,
-          size: z.enum(["small", "medium", "large", "wide"]),
+          size: z.enum(["small", "medium", "large", "wide", "splash"]),
           shot: z.enum(["远景", "全景", "中景", "近景", "特写"]),
           angle: z.enum(["平视", "俯视", "仰视"]),
           location_id: entityIdSchema,
@@ -275,6 +280,15 @@ export type ChapterSchedule = {
   { mode: "daily"; time: string; timezone: string }
 );
 
+const stripLayoutSchema = z.object({
+  rows: z.array(positiveNumber.max(100)).min(1),
+  hero: positiveInteger.nullable(),
+  cost: nonnegativeInteger,
+}).strict().superRefine((layout, ctx) => {
+  if (layout.rows.reduce((sum, row) => sum + row, 0) !== 100) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["rows"], message: "Layout row heights must total 100" });
+  if (layout.hero !== null && layout.hero > layout.rows.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["hero"], message: "Layout hero must identify an existing row" });
+});
+
 export const configSchema = z
   .object({
     openai: z
@@ -331,6 +345,29 @@ export const configSchema = z
     storyboard: z
       .object({
         format: z.enum(["page", "strip"]).default("page"),
+        layout_mode: z.enum(["fixed", "budget"]).default("fixed"),
+        layouts: z.object({
+          "strip-4": stripLayoutSchema,
+          "strip-3a": stripLayoutSchema.optional(),
+          "strip-3b": stripLayoutSchema.optional(),
+          "strip-2": stripLayoutSchema.optional(),
+          "strip-1": stripLayoutSchema.optional(),
+        }).strict().default({
+          "strip-4": { rows: [25, 25, 25, 25], hero: null, cost: 0 },
+          "strip-3a": { rows: [50, 25, 25], hero: 1, cost: 1 },
+          "strip-3b": { rows: [25, 25, 50], hero: 3, cost: 1 },
+          "strip-2": { rows: [65, 35], hero: 1, cost: 2 },
+          "strip-1": { rows: [100], hero: 1, cost: 3 },
+        }),
+        layout_budget: z.object({ daily: nonnegativeInteger, action: nonnegativeInteger, climax: nonnegativeInteger }).default({ daily: 1, action: 2, climax: 4 }),
+        layout_rules: z.object({
+          max_candidates: nonnegativeInteger.default(5),
+          max_splash_per_chapter: nonnegativeInteger.default(1),
+          min_beat_gap: nonnegativeInteger.default(8),
+          max_hero_dialogue: nonnegativeInteger.default(2),
+          min_group_gap: nonnegativeInteger.default(2),
+          max_same_shot_run: nonnegativeInteger.default(3),
+        }).default({}),
         min_panels: positiveInteger,
         max_panels: positiveInteger,
         max_bubble_chars: positiveInteger,
@@ -339,7 +376,7 @@ export const configSchema = z
         max_revisions: nonnegativeInteger,
         coverage_min_importance: positiveInteger.max(3),
         emphasis_min_importance: positiveInteger.max(3),
-        large_panel_sizes: z.array(z.enum(["small", "medium", "large", "wide"])).min(1),
+        large_panel_sizes: z.array(z.enum(["small", "medium", "large", "wide", "splash"])).min(1),
         reading_order: z.enum(["ltr", "rtl"]),
       })
       .passthrough(),
@@ -461,6 +498,9 @@ export const configSchema = z
   })
   .passthrough()
   .superRefine((config, ctx) => {
+    if (config.storyboard.layouts["strip-4"].cost !== 0 || config.storyboard.layouts["strip-4"].hero !== null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["storyboard", "layouts", "strip-4"], message: "strip-4 must have zero cost and no hero" });
+    }
     if (config.storyboard.min_panels > config.storyboard.max_panels) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

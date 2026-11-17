@@ -4,7 +4,7 @@ import { getChapter, requireStoryboardReady } from "../data.js";
 import { PreconditionError } from "../errors.js";
 import { jpegSize, pngSize, sha256 } from "../image.js";
 import { renderModernReader } from "../reader.js";
-import { pageFile, readingFile, STRIP_LAYOUT, type Context, type Page, type PageStoryboard, type ReadingImages, type UploadedImages } from "../types.js";
+import { pageFile, readingFile, isStripLayout, type Context, type Page, type PageStoryboard, type ReadingImages, type UploadedImages } from "../types.js";
 
 function htmlEscape(text: string): string {
   return text.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
@@ -82,7 +82,7 @@ export async function exportChapter(ctx: Context, chapterNumber: number | string
     }
     return { chapter: chapter.id, ...paths, flagged, image_urls: imageUrls(), skipped: !uploaded };
   }
-  const isStrip = rows.every((row) => (JSON.parse(row.storyboard) as PageStoryboard).layout === STRIP_LAYOUT);
+  const isStrip = rows.every((row) => isStripLayout((JSON.parse(row.storyboard) as PageStoryboard).layout));
   const dimensions = ctx.config.image.size.split("x").map(Number);
   const fallbackSize = { width: dimensions[0], height: dimensions[1] };
   const pdf = ctx.config.export.pdf ? await PDFDocument.create() : undefined;

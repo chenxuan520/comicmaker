@@ -36,6 +36,21 @@ image:
 
 storyboard:
   format: page
+  layout_mode: fixed
+  layouts:
+    strip-4: { rows: [25, 25, 25, 25], hero: null, cost: 0 }
+    strip-3a: { rows: [50, 25, 25], hero: 1, cost: 1 }
+    strip-3b: { rows: [25, 25, 50], hero: 3, cost: 1 }
+    strip-2: { rows: [65, 35], hero: 1, cost: 2 }
+    strip-1: { rows: [100], hero: 1, cost: 3 }
+  layout_budget: { daily: 1, action: 2, climax: 4 }
+  layout_rules:
+    max_candidates: 5
+    max_splash_per_chapter: 1
+    min_beat_gap: 8
+    max_hero_dialogue: 2
+    min_group_gap: 2
+    max_same_shot_run: 3
   min_panels: 3
   max_panels: 5
   max_bubble_chars: 15

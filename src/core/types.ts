@@ -7,6 +7,8 @@ export type { Config, Character, Outfit, Location, PageStoryboard };
 
 export const STRIP_LAYOUT = "strip-4";
 
+export function isStripLayout(layout: string): boolean { return /^strip-/.test(layout); }
+
 export interface ReadingImages { target_kb: number | null; max_width?: number; attempts: Record<string, string> }
 export interface UploadedImage { attempt_id: string; sha256: string; url: string }
 export interface UploadedImages { base_url: string; target_kb: number | null; max_width?: number; pages: Record<string, UploadedImage> }

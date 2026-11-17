@@ -3,7 +3,7 @@ import { PreconditionError } from "./errors.js";
 import type { ImageInput, TemplateSource } from "./ports.js";
 import type { RenderedPrompt } from "./prompts.js";
 import type { TextError } from "./review.js";
-import { STRIP_LAYOUT, type Context, type PageStoryboard, type Ref } from "./types.js";
+import { isStripLayout, type Context, type PageStoryboard, type Ref } from "./types.js";
 
 export interface PromptReference {
   index: number;
@@ -50,7 +50,7 @@ export async function buildPagePrompt(ctx: Context, page: PageStoryboard, correc
     return { ...character, outfit };
   });
   const location = locationIds.size === 1 ? bible.locations.find((item) => locationIds.has(item.id)) ?? null : null;
-  const isStrip = page.layout === STRIP_LAYOUT;
+  const isStrip = isStripLayout(page.layout);
   const data = {
     page, refs, characters, location, corrections, text_errors: textErrors,
     reading_order_description: isStrip ? `top to bottom, one panel per row; bubbles ${ctx.config.storyboard.reading_order === "rtl" ? "right to left" : "left to right"}` : ctx.config.storyboard.reading_order === "rtl" ? "right to left, top to bottom" : "left to right, top to bottom",

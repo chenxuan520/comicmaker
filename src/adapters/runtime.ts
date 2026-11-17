@@ -72,6 +72,7 @@ export class WorkspaceRuntime {
         ai: this.provider ?? new ConfiguredAiProvider(config, await aiKeys(this.root, config)),
         imageHost: config.export.imgbed.enabled ? new ImgBedUploader({ baseURL: config.export.imgbed.base_url, ...await imgBedCredentials(this.root) }) : undefined,
       };
+      if (config.storyboard.layout_mode === "budget" && config.storyboard.format !== "strip") log("warning", "storyboard.layout_mode=budget only applies to strip format; using fixed layouts");
       for (const model of new Set([...Object.values(config.models), config.image.model])) if (!config.pricing[model]) log("warning", `Pricing is not configured for ${model}; estimates will be used`);
       return {
         ctx, loaded, events,

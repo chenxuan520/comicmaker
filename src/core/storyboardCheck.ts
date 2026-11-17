@@ -1,5 +1,5 @@
 import type { Config, PageStoryboard, Scene, StoryboardIssue } from "../../schemas/index.js";
-import { STRIP_LAYOUT, type Bible, type Ref } from "./types.js";
+import { STRIP_LAYOUT, isStripLayout, type Bible, type Ref } from "./types.js";
 
 export function countChineseCharacters(text: string): number {
   return text.match(/[\p{Script=Han}\u3001-\u3003\u3008-\u3011\u3014-\u301b\uff01\uff08\uff09\uff0c\uff0e\uff1a\uff1b\uff1f\uff3b\uff3d\uff5b\uff5d\uff61-\uff65\u2014\u2018\u2019\u201c\u201d\u2026\u00b7]/gu)?.length ?? 0;
@@ -58,7 +58,7 @@ export function validateStoryboard(pages: PageStoryboard[], scenes: Scene[], bib
     } else if (page.panels.length < rules.min_panels || page.panels.length > rules.max_panels) {
       add(page.page_no, anchor, "pacing", `Page has ${page.panels.length} panels; allowed range is ${rules.min_panels}-${rules.max_panels}`, "Adjust the panel count to the configured range");
     }
-    if (rules.format === "page" && page.layout === STRIP_LAYOUT) add(page.page_no, anchor, "pacing", "Paged format cannot use the vertical strip layout", "Use a paged row layout rather than strip-4, or select storyboard.format=strip");
+    if (rules.format === "page" && isStripLayout(page.layout)) add(page.page_no, anchor, "pacing", "Paged format cannot use the vertical strip layout", "Use a paged row layout rather than strip-4, or select storyboard.format=strip");
     for (const panel of page.panels) {
       if (panelIds.has(panel.id)) add(page.page_no, panel.id, "pacing", `Duplicate panel ID ${panel.id}`, "Use unique panel IDs within this page");
       panelIds.add(panel.id);

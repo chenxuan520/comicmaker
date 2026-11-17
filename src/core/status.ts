@@ -1,6 +1,6 @@
 import { getBible } from "./data.js";
 import { coverRetryRequired, getCover } from "./steps/cover.js";
-import { chapterId, readingFile, STRIP_LAYOUT, type Chapter, type Context, type Page, type Ref, type ReadingImages, type UploadedImages } from "./types.js";
+import { chapterId, readingFile, isStripLayout, type Chapter, type Context, type Page, type Ref, type ReadingImages, type UploadedImages } from "./types.js";
 
 export async function getStatus(ctx: Context, chapterNumber?: number | string) {
   const filter = chapterNumber === undefined ? "" : "WHERE c.id = ?";
@@ -31,7 +31,7 @@ export async function getStatus(ctx: Context, chapterNumber?: number | string) {
     const readingPath = page.final_attempt_id && ctx.config.export.reading_image_kb !== null && exported?.target_kb === ctx.config.export.reading_image_kb && exported.max_width === ctx.config.export.reading_max_width && exported?.attempts[page.id] === page.final_attempt_id ? `chapters/${page.chapter_id}/export/${readingFile(page.page_no)}` : null;
     return {
       ...page, storyboard: JSON.parse(page.storyboard),
-      format: JSON.parse(page.storyboard).layout === STRIP_LAYOUT ? "strip" as const : "page" as const,
+      format: isStripLayout(JSON.parse(page.storyboard).layout) ? "strip" as const : "page" as const,
       image_path: page.final_attempt_id ? `chapters/${page.chapter_id}/pages/p${String(page.page_no).padStart(2, "0")}.png` : null,
       reading_image_path: readingPath && await ctx.fs.exists(readingPath) ? readingPath : null,
       hosted_image_url: hostedUrl,
