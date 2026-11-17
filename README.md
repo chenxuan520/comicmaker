@@ -181,6 +181,45 @@ pnpm comic cover gen -p demo-book --json
 
 重复执行复用已存原图，不再收费；可设 `cover.enabled: false` 关闭封面生成。失败后先查账本和已存原图，保存成功的图片可免费恢复；只有明确确认再试或重绘时使用 `cover gen --force`，追加新封面及费用，不覆盖旧原图；新图失败时仍保留旧的成功封面。更换书名或强制导入新原稿会生成新的封面目标，历史封面保留。封面生成不等于封面内容或全书人工验收通过。
 
+### 实验：条漫预算版式
+
+此实验默认关闭：`storyboard.layout_mode: fixed` 保留四个等宽横格。`budget` 只对 `storyboard.format: strip` 生效；用于页漫时提示 warning 并按 fixed 处理，不修改已存分镜或图片。
+
+在独立实验分支和**完整复制的工作区**中试用，不在已发布作品的工作区运行收费或 `--force` 命令，也不重新部署阅读站点：
+
+```sh
+cp -a "$COMIC_WORKSPACE" "${COMIC_WORKSPACE}-layout-exp"
+export COMIC_WORKSPACE="${COMIC_WORKSPACE}-layout-exp"
+pnpm --silent comic list --json
+```
+
+在副本项目 YAML 中开启，并关闭线上图床：
+
+```yaml
+storyboard:
+  format: strip
+  layout_mode: budget
+export:
+  imgbed:
+    enabled: false
+```
+
+改编模型只输出每个节拍的 `beat_type` 和最多五个 `top_moments` 排名，程序按章分配少量大格，分镜模型不得增删或更换计划。版式与默认点数为：`strip-4`（25/25/25/25，0）、`strip-3a`（50/25/25，1）、`strip-3b`（25/25/50，1）、`strip-2`（65/35，2）、`strip-1`（100，3）。可改内置版式的行高比例和 cost，不新增版式名、格数或重点格位置；行高合计必须为100。
+
+`layout_budget` 的 daily / action / climax 默认是1 / 2 / 4；`layout_rules` 控制候选上限、整组大图次数、节拍间隔、重点节拍对白数与连续景别。`max_same_shot_run: 0` 关闭景别检查；特殊组之间不足 `min_group_gap` 只提示，不阻塞。**这些点数不是模型费用**，原费用预算仍独立检查。
+
+计划存入 `meta` 的 `layout.plan.<chapter_id>`，并镜像到 `chapters/<chapter_id>/layout_plan.json`。复用没有标签的旧改编时为空计划，不额外调用模型；明确 `adapt --force` 才重做改编与计划。程序在生图前校验格数、尺寸及重点节拍；特殊版式生图失败沿用原审查与重抽上限，**不自动降级重写分镜**。
+
+```sh
+pnpm --silent comic adapt -p demo-book --chapter 17 --force --json
+pnpm --silent comic rhythm -p demo-book --chapter 17
+pnpm --silent comic rhythm -p demo-book --chapter 17 --json
+```
+
+`rhythm` 与 `status` 都只读已有分镜、不调用模型。节奏条列出组序列、特殊组数、版式点数、间隔提示和特殊组 flagged 状态。先检查分镜、节拍和费用，再按本次授权生成；代码或导出通过不等于实际版式与内容人工验收。
+
+连续场景可另设 `image.scene_continuity: true`（默认 false），同时开启 `include_location_ref`，并给 `max_refs` 留足画风、当前人物、所有地点及上一组原图的名额。启用后同章顺序生成，后一组仅在场景、时间与服装连续时引用前组已选且审查通过的不可变原图；切场景、时间或前组 flagged 时不沿用。缺图、哈希改变或名额不足在收费前报错，不缩小 API 参考。分镜仍须写清确有依据的移动，不能用换景别随意交换人物左右位置。
+
 ### 制作与重做
 
 提取遗漏整个人物或地点时，可用 `pnpm comic settings add -p demo-book --file missing-settings.json --json` 零费用补录。文件使用提取结果的结构 `{ "characters": [...], "locations": [...] }`，只放缺项；人物字段与 `bible/characters.json` 相同，地点字段与 `bible/locations.json` 相同。命令校验角色证据段号、适用章、服装归属及 ID，整批通过后追加，不调用模型，不覆盖已有设定、参考图或章节状态；`--force` 也不允许覆盖。原文是否支持这些设定由操作者先核实，新增参考图仍需单独生成并锁定。
@@ -270,6 +309,7 @@ pnpm comic export -p demo-book --chapter 1 --force --json
 | `export` | `--chapter <n>` 必填，可选 `--force` | 导出 / 更新 PDF 与 HTML |
 | `run` | `--chapter <n>` 必填，可选 `--dry-run`、`--force` | 章节流水线 / 无 API 提示词预览 |
 | `status` / `budget` | status 可选 `--chapter <n>`；budget 可选 `-p <id>` | 查状态、reviews 与 flagged / 查账本 |
+| `rhythm` | 可选 `--chapter <n>`、`--json` | 只读章节版式序列、点数与间隔提示，不调用模型 |
 | `config` | 可选 `--project`，项目选择用 `-p <id>` | 打印三层合并值及来源，额外返回项目原始 YAML 值 |
 | `prompts list` | 无额外参数 | 列模板及生效来源 |
 | `prompts eject <模板名>` | 可选 `--workspace` | 复制生效模板到项目或工作区覆盖层 |

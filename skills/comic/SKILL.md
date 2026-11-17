@@ -60,6 +60,7 @@ description: 操作 comicmaker 本地小说转漫画 CLI 时使用，包括项�
 | `export` | 必填 `--chapter <n>`，可选 `--force` | 本地 PDF / HTML；重做后用 force 更新，不调用模型 |
 | `run` | 必填 `--chapter <n>`，可选 `--dry-run`、`--force` | adapt → render → export，不能代做 prepare / 人工 lock；dry-run 只预览已有数据 |
 | `status` | 可选 `--chapter <n>` | 返回项目、章节、pages 含分镜 / reviews、设定、refs、warnings、flagged |
+| `rhythm` | 可选 `--chapter <n>`、`--json` | 只读已有分镜的版式序列、特殊组数、版式点数、间隔提示和特殊组 flagged；不调用模型，点数不是费用 |
 | `budget` | 可选 `-p <id>` | 默认全工作区；-p 仅过滤项目账本金额，限额与周期仍是工作区策略 |
 | `config` | 可选 `--project`，选项目用 `-p <id>` | 始终返回三层合并 config 和 sources；布尔 --project 额外返回 project 原始配置值 |
 | `prompts list` | 无 | 返回 templates 的 name / source |
