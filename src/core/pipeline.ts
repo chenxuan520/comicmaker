@@ -1,5 +1,6 @@
 import { getBible, getChapter, getPage, getLayoutPlan, chapterData, entitiesForChapter, firstAppearanceCharacters } from "./data.js";
-import { layoutPlanData } from "./layoutPlan.js";
+import { layoutPlanData, layoutRows } from "./layoutPlan.js";
+import { isStripLayout, STRIP_LAYOUT } from "./types.js";
 import { PreconditionError } from "./errors.js";
 import { buildPagePrompt } from "./promptBuilder.js";
 import { visualRefs } from "./review.js";
@@ -23,7 +24,7 @@ export async function renderStepPrompt(ctx: Context, step: string, options: { ch
   const page = row ? JSON.parse(row.storyboard) as PageStoryboard : null;
   if (step === "image") {
     if (!page) throw new PreconditionError("Use --page to preview an image prompt");
-    const { prompt, refs } = await buildPagePrompt(ctx, page);
+    const { prompt, refs } = await buildPagePrompt(ctx, page, "", [], row?.chapter_id);
     return { prompt, refs };
   }
   const entities = chapter ? entitiesForChapter(bible, chapter) : bible;
@@ -33,6 +34,7 @@ export async function renderStepPrompt(ctx: Context, step: string, options: { ch
   const outfit = options.target ? bible.outfits.find((item) => item.id === options.target) ?? null : null;
   const character = outfit ? bible.characters.find((item) => outfit.id.startsWith(`${item.id}.`)) ?? null : null;
   const location = options.target ? bible.locations.find((item) => item.id === options.target) ?? null : null;
+  const variableStrip = Boolean(page && isStripLayout(page.layout) && page.layout !== STRIP_LAYOUT);
   const data = {
     chapters: chapters.map(chapterData), chapter: chapter ? chapterData(chapter) : null,
     prev_summary: previous, ...entities, scenes: adaptation ? JSON.parse(adaptation.scenes) : [],
@@ -40,6 +42,10 @@ export async function renderStepPrompt(ctx: Context, step: string, options: { ch
     review_issues: [], storyboard: { pages: pages.map((item) => JSON.parse(item.storyboard)) },
     ...(ctx.config.storyboard.format === "strip" && ctx.config.storyboard.layout_mode === "budget" ? { layout_plan: layoutPlanData(chapter ? await getLayoutPlan(ctx, chapter.id) : null, ctx.config.storyboard) } : {}),
     page, panel_count: page?.panels.length ?? 0, layout: page?.layout ?? "", refs: page && step === "review_visual" ? await visualRefs(ctx, page) : [],
+    ...(step.startsWith("image/") ? {
+      variable_strip: variableStrip, layout_rows: page ? layoutRows(page, ctx.config.storyboard) : [],
+      ...(variableStrip ? { reading_order_description: `top to bottom, one panel per row; bubbles ${ctx.config.storyboard.reading_order === "rtl" ? "right to left" : "left to right"}` } : {}),
+    } : {}),
     character, outfit, location, corrections: "", text_errors: [], extractions: [],
   };
   if (["adapt", "storyboard", "storyboard_review"].includes(step) && !chapter) throw new PreconditionError("Use --chapter for this prompt");

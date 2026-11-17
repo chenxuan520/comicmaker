@@ -14,8 +14,10 @@ import { planLayouts, stripPanelSizes, type LayoutPlan, type StripLayoutName } f
 import { validateStoryboard } from "../src/core/storyboardCheck.js";
 import type { Bible, Ref } from "../src/core/types.js";
 import { renderStepPrompt } from "../src/core/pipeline.js";
+import { buildPagePrompt } from "../src/core/promptBuilder.js";
+import { renderChapter, renderPage } from "../src/core/steps/render.js";
 import { isStripLayout } from "../src/core/types.js";
-import { adaptation, extraction, fixture, mockOutput, MockAi, novel, storyboard } from "./helpers.js";
+import { adaptation, extraction, fixture, mockOutput, MockAi, novel, png, storyboard } from "./helpers.js";
 
 const defaults = configSchema.parse(parse(await readFile(new URL("../config.default.yaml", import.meta.url), "utf8")));
 
@@ -58,6 +60,27 @@ async function preparedFixture(t: TestContext, ai = new MockAi()) {
 
 function fourPanelPage() {
   return storyboardSchema.parse({ pages: [{ ...storyboard, layout: "strip-4", panels: Array.from({ length: 4 }, (_, index) => ({ ...structuredClone(storyboard.panels[Math.min(index, 2)]), id: `p${index + 1}`, row: index + 1, size: "wide" })) }] }).pages[0];
+}
+
+async function continuityFixture(t: TestContext, ai = new MockAi()) {
+  const f = await preparedFixture(t, ai);
+  f.ctx.config.image.scene_continuity = true;
+  f.ctx.config.image.max_refs = 4;
+  f.ctx.config.storyboard.format = "strip";
+  const structured = ai.onStructured;
+  ai.onStructured = (request) => {
+    if (request.schema_name === "review_text") return { panels: fourPanelPage().panels.map((panel, index) => ({ panel: index + 1, texts: panel.dialogue.map((line) => line.text) })) };
+    if (request.schema_name === "review_visual") return { panel_count: 4, characters: Array.from({ length: 4 }, (_, index) => ({ panel: index + 1, char_id: "lin_qing", identity_match: 0.95, color_match: 0.95, issue: null })), content: [], artifacts: [], fix_instructions: "" };
+    return structured ? structured(request) : mockOutput(request);
+  };
+  const scenes = structuredClone(adaptation.scenes);
+  scenes.push({ ...structuredClone(scenes[0]), id: "s2", beats: scenes[0].beats.map((beat, index) => ({ ...beat, id: `b${index + 4}` })) });
+  const pages = [fourPanelPage(), { ...fourPanelPage(), page_no: 2 }, { ...fourPanelPage(), page_no: 3 }];
+  for (const panel of pages[2].panels) panel.beat_ids = panel.beat_ids.map((id) => `b${Number(id.slice(1)) + 3}`);
+  await f.ctx.db.run("INSERT INTO adaptations (chapter_id,scenes,version) VALUES ('001',?,1)", [JSON.stringify(scenes)]);
+  await saveStoryboard(f.ctx, "001", pages);
+  await f.ctx.db.run("INSERT OR REPLACE INTO meta (key,value) VALUES ('storyboard.review.001',?)", [JSON.stringify({ completed: true, passed: true, issues: [] })]);
+  return { ...f, pages };
 }
 
 for (const format of ["page", "strip"] as const) {
@@ -281,10 +304,116 @@ test("program-invalid layout groups are revised before rendering and previews ca
   assert.match(preview.system, /b1：layout=strip-3b/);
 });
 
+test("a planned hero on a later group can be repaired without losing the legal cross-group revision", async (t) => {
+  const ai = new MockAi(), scenes = beats(3);
+  scenes[0].beats[0].beat_type = "climax";
+  const initial = [plannedPage("strip-4", 1), plannedPage("strip-4", 2), plannedPage("strip-4", 3)];
+  initial[0].panels[0].beat_ids = ["b2"];
+  initial[1].panels[0].beat_ids = ["b3"];
+  initial[2].panels[0].beat_ids = ["b1"];
+  const corrected = plannedPage("strip-1", 3, "b1");
+  let calls = 0;
+  ai.onStructured = (request) => request.schema_name === "adapt" ? { scenes, suggested_pages: 3, top_moments: ["b1"] } : request.schema_name === "storyboard" ? { pages: calls++ === 0 ? initial : [corrected] } : mockOutput(request);
+  const f = await preparedFixture(t, ai);
+  f.ctx.config.storyboard = budgetRules();
+  await adaptChapter(f.ctx, 1);
+  const stored = JSON.parse((await f.ctx.fs.readText("chapters/001/storyboard.json"))!);
+  assert.deepEqual(stored.pages, [initial[0], initial[1], corrected]);
+  const revision = ai.structuredCalls.filter((request) => request.schema_name === "storyboard")[1];
+  assert.match(revision.system, /size 只使用 small、medium、large、wide、splash/);
+  assert.doesNotMatch(revision.system, /每组四个横向画格单列排列/);
+});
+
 test("unsupported built-in shapes are refused in config before any model calls", () => {
   for (const definition of [{ rows: [50, 25, 25], hero: 1, cost: 2 }, { rows: [65, 35], hero: 2, cost: 2 }]) {
     assert.equal(configSchema.safeParse({ ...defaults, storyboard: { ...defaults.storyboard, layouts: { ...defaults.storyboard.layouts, "strip-2": definition } } }).success, false);
   }
+});
+
+test("variable strip image prompts describe exact row heights and only the hero gets key-moment composition", async (t) => {
+  const f = await preparedFixture(t), page = plannedPage("strip-2", 1, "b1");
+  const built = await buildPagePrompt(f.ctx, page);
+  assert.match(built.prompt.text, /Panel 1 occupies 65% of the canvas height, starting 0% from the top; this is the key panel of the strip\./);
+  assert.match(built.prompt.text, /Panel 2 occupies 35% of the canvas height, starting 65% from the top\./);
+  assert.equal((built.prompt.text.match(/Key moment:/g) ?? []).length, 1);
+  const sections = built.prompt.text.split("[PANEL ");
+  assert.match(sections[1], /Key moment:/);
+  assert.doesNotMatch(sections[2], /Key moment:/);
+  const fixed = await buildPagePrompt(f.ctx, fourPanelPage());
+  assert.doesNotMatch(fixed.prompt.text, /occupies .*%|Key moment:/);
+  await saveStoryboard(f.ctx, "001", [page]);
+  const preview = await renderStepPrompt(f.ctx, "image/page.md", { page: "001-p01" }) as { text: string };
+  assert.match(preview.text, /Panel 2 occupies 35%/);
+});
+
+test("same-scene groups render serially and include the prior selected original at full size", async (t) => {
+  const ai = new MockAi(), f = await continuityFixture(t, ai), before = ai.imageCalls.length;
+  f.ctx.config.image.concurrency = 3;
+  let active = 0, maximum = 0;
+  ai.onImage = async () => {
+    active++;
+    maximum = Math.max(maximum, active);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    active--;
+  };
+  await renderChapter(f.ctx, 1);
+  assert.equal(maximum, 1);
+  const calls = ai.imageCalls.slice(before);
+  assert.equal(calls.length, 3);
+  for (const call of calls) assert.ok(call.images.some((image) => image.name === "qinglan_peak.png"));
+  const reference = calls[1].images.find((image) => image.name === "001-p01.png");
+  assert.ok(reference);
+  assert.deepEqual(reference.data, png);
+  assert.match(calls[1].prompt, /Use only its last panel/);
+  assert.ok(!calls[0].images.some((image) => image.name.startsWith("001-p")));
+  assert.ok(!calls[2].images.some((image) => image.name.startsWith("001-p")));
+  const attempt = await f.ctx.db.get<{ ref_paths: string }>("SELECT ref_paths FROM attempts WHERE page_id='001-p02'");
+  const paths = JSON.parse(attempt!.ref_paths) as string[];
+  assert.ok(paths.some((path) => path === "chapters/001/attempts/p01-a1.png"));
+  assert.ok(paths.every((path) => !path.includes("/pages/")));
+});
+
+test("scene continuity reserves location and prior-image slots instead of silently discarding identities", async (t) => {
+  const f = await continuityFixture(t);
+  await renderPage(f.ctx, "001-p01");
+  f.ctx.config.image.max_refs = 3;
+  const calls = f.ai.imageCalls.length;
+  await assert.rejects(buildPagePrompt(f.ctx, f.pages[1], "", [], "001"), /max_refs >= 4/);
+  assert.equal(f.ai.imageCalls.length, calls);
+  f.ctx.config.image.max_refs = 4;
+  f.ctx.config.image.include_location_ref = false;
+  await assert.rejects(buildPagePrompt(f.ctx, f.pages[1], "", [], "001"), /include_location_ref=true/);
+});
+
+test("continuity references stop at time cuts and never propagate flagged or unpassed previous selections", async (t) => {
+  const f = await continuityFixture(t);
+  await renderPage(f.ctx, "001-p01");
+  const nighttime = structuredClone(f.pages[1]);
+  for (const panel of nighttime.panels) panel.time = "夜晚";
+  assert.ok((await buildPagePrompt(f.ctx, nighttime, "", [], "001")).refs.every((ref) => ref.kind !== "continuity"));
+  await f.ctx.db.run("UPDATE pages SET status='flagged' WHERE id='001-p01'");
+  assert.ok((await buildPagePrompt(f.ctx, f.pages[1], "", [], "001")).refs.every((ref) => ref.kind !== "continuity"));
+  await f.ctx.db.run("UPDATE pages SET status='exported' WHERE id='001-p01'");
+  await f.ctx.db.run("UPDATE reviews SET passed=0 WHERE attempt_id=(SELECT final_attempt_id FROM pages WHERE id='001-p01')");
+  assert.ok((await buildPagePrompt(f.ctx, f.pages[1], "", [], "001")).refs.every((ref) => ref.kind !== "continuity"));
+});
+
+test("auto-passed images made with visual review disabled are not inherited as model-reviewed references", async (t) => {
+  const f = await continuityFixture(t);
+  f.ctx.config.review.enabled = false;
+  await renderPage(f.ctx, "001-p01");
+  assert.equal((await f.ctx.db.get<{ status: string }>("SELECT status FROM pages WHERE id='001-p01'"))!.status, "passed");
+  assert.ok((await buildPagePrompt(f.ctx, f.pages[1], "", [], "001")).refs.every((ref) => ref.kind !== "continuity"));
+});
+
+test("missing or changed continuity originals stop before new image fees", async (t) => {
+  const f = await continuityFixture(t);
+  await renderPage(f.ctx, "001-p01");
+  const before = await f.workspace.ledger.all("SELECT * FROM spend ORDER BY id"), calls = f.ai.imageCalls.length;
+  await writeFile(join(f.root, "projects/book/chapters/001/attempts/p01-a1.png"), new Uint8Array([1, 2, 3]));
+  await assert.rejects(renderPage(f.ctx, "001-p02"), /original is missing or changed/);
+  assert.equal(f.ai.imageCalls.length, calls);
+  assert.deepEqual(await f.workspace.ledger.all("SELECT * FROM spend ORDER BY id"), before);
 });
 
 test("budget mode on paged comics warns and strip layout detection includes the built-in variants", async (t) => {

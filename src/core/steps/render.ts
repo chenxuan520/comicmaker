@@ -63,7 +63,7 @@ export async function renderPage(ctx: Context, pageId: string, options: { redo?:
   const savedNote = await ctx.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", [`render.note.${row.id}`]);
   const note = options.note ?? savedNote?.value ?? "";
   let page = JSON.parse(row.storyboard) as PageStoryboard;
-  await buildPagePrompt(ctx, page, note);
+  await buildPagePrompt(ctx, page, note, [], row.chapter_id);
   await ctx.db.run("UPDATE pages SET status = 'generating' WHERE id = ?", [row.id]);
   for (;;) {
     ctx.signal?.throwIfAborted();
@@ -82,7 +82,7 @@ export async function renderPage(ctx: Context, pageId: string, options: { redo?:
     const latest = attempts.at(-1);
     if (latest?.status === "refused") page = await rewritePage(ctx, row, page, latest.id);
     const corrections = [candidates.at(-1)?.review.corrections ?? "", note].filter(Boolean).join("\n");
-    const built = await buildPagePrompt(ctx, page, corrections, candidates.at(-1)?.review.text_errors);
+    const built = await buildPagePrompt(ctx, page, corrections, candidates.at(-1)?.review.text_errors, row.chapter_id);
     try {
       await generateImage(ctx, { pageId: row.id, prompt: built.prompt, images: built.images, refPaths: built.refs.map((ref) => ref.path), path: (seq) => `chapters/${row.chapter_id}/attempts/${pageFile(row.page_no).replace(/\.png$/, "")}-a${seq}.png` });
     } catch (error) {
@@ -97,12 +97,12 @@ export async function renderChapter(ctx: Context, chapterNumber: number | string
   const pages = await ctx.db.all<Page>("SELECT * FROM pages WHERE chapter_id = ? ORDER BY page_no", [chapter.id]);
   if (!pages.length) throw new PreconditionError("Adapt and review the chapter before rendering it");
   await requireStoryboardReady(ctx, chapter.id);
-  if (ctx.config.cover.enabled && !await getCover(ctx)) await buildPagePrompt(ctx, JSON.parse(pages[0].storyboard));
+  if (ctx.config.cover.enabled && !await getCover(ctx)) await buildPagePrompt(ctx, JSON.parse(pages[0].storyboard), "", [], chapter.id);
   const cover = await generateCover(ctx);
   let cursor = 0;
   let failure: unknown;
   const results: Awaited<ReturnType<typeof renderPage>>[] = [];
-  const workers = Array.from({ length: Math.min(ctx.config.image.concurrency, pages.length) }, async () => {
+  const workers = Array.from({ length: Math.min(ctx.config.image.scene_continuity ? 1 : ctx.config.image.concurrency, pages.length) }, async () => {
     while (cursor < pages.length && !failure) {
       const page = pages[cursor++];
       try { results.push(await renderPage(ctx, page.id, { redo: options.force })); }
@@ -129,7 +129,7 @@ export async function restorePageAttempt(ctx: Context, pageId: string, attemptId
   const review = await ctx.db.get<{ id: string; score: number; passed: number; fix_instructions: string | null; text_check: string | null }>("SELECT * FROM reviews WHERE attempt_id = ?", [attemptId]);
   if (!attempt?.path || attempt.status !== "ok" || !review) throw new PreconditionError("Restore requires a saved reviewed page attempt");
   const note = await ctx.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", [`render.note.${page.id}`]);
-  const built = await buildPagePrompt(ctx, JSON.parse(page.storyboard), note?.value ?? "");
+  const built = await buildPagePrompt(ctx, JSON.parse(page.storyboard), note?.value ?? "", [], page.chapter_id);
   if (attempt.prompt !== built.prompt.text || attempt.model !== ctx.config.image.model || attempt.quality !== ctx.config.image.quality || attempt.ref_paths !== JSON.stringify(built.refs.map((ref) => ref.path))) throw new PreconditionError("Saved attempt inputs do not match the current page");
   const bytes = await ctx.fs.readBytes(attempt.path);
   if (!bytes || await sha256(bytes) !== attempt.sha256) throw new PreconditionError("Saved attempt original is missing or changed");

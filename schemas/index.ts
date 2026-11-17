@@ -336,6 +336,7 @@ export const configSchema = z
         max_refs: nonnegativeInteger,
         include_style_ref: z.boolean(),
         include_location_ref: z.boolean(),
+        scene_continuity: z.boolean().default(false),
         concurrency: positiveInteger,
         max_refusals: nonnegativeInteger,
         timeout_sec: positiveNumber,

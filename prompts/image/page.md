@@ -1,3 +1,12 @@
+{{#if variable_strip}}
+[VERTICAL STRIP]
+Mobile scrolling comic strip. Aspect ratio: {{config.image.aspect_ratio}}. Output size: {{config.image.size}}.
+Exactly {{page.panels.length}} panel(s), each spanning the full canvas width, stacked in one column from top to bottom, with narrow white horizontal gutters.
+{{#each layout_rows}}
+Panel {{index}} occupies {{percent}}% of the canvas height, starting {{top}}% from the top{{#if hero}}; this is the key panel of the strip{{/if}}.
+{{/each}}
+No side-by-side panels, no 2x2 grids, no page titles or page-number lettering. Reading order: {{reading_order_description}}.
+{{else}}
 {{#if (eq page.layout "strip-4")}}
 [VERTICAL STRIP]
 Mobile scrolling comic strip. Aspect ratio: {{config.image.aspect_ratio}}. Output size: {{config.image.size}}.
@@ -7,6 +16,7 @@ Reading order: {{reading_order_description}}. Continue the story downward across
 [PAGE]
 Single comic page. Aspect ratio: {{config.image.aspect_ratio}}. Output size: {{config.image.size}}. White gutters between panels.
 Layout rows: {{page.layout}}. Reading order: {{reading_order_description}}.
+{{/if}}
 {{/if}}
 {{#if location}}
 Shared page setting: {{location.name}}.

@@ -22,6 +22,16 @@ export function layoutPlanData(plan: LayoutPlan | null, rules: Config["storyboar
   return (plan?.items ?? []).map((item) => ({ ...item, panel_count: rules.layouts[item.layout]!.rows.length, hero: rules.layouts[item.layout]!.hero, sizes: stripPanelSizes[item.layout] }));
 }
 
+export function layoutRows(page: PageStoryboard, rules: Config["storyboard"]) {
+  const layout = Object.hasOwn(rules.layouts, page.layout) ? rules.layouts[page.layout as StripLayoutName] : undefined;
+  let top = 0;
+  return (layout?.rows ?? []).map((percent, index) => {
+    const row = { index: index + 1, percent, top, hero: layout!.hero === index + 1 };
+    top += percent;
+    return row;
+  });
+}
+
 export function planLayouts(scenes: Scene[], topMoments: string[], rules: Config["storyboard"]): LayoutPlan {
   const beats = scenes.flatMap((scene) => scene.beats);
   const candidates = [...new Set(topMoments)].slice(0, rules.layout_rules.max_candidates);

@@ -29,6 +29,7 @@ image:
   max_refs: 3
   include_style_ref: true
   include_location_ref: true
+  scene_continuity: false
   concurrency: 2
   max_refusals: 2
   timeout_sec: 300

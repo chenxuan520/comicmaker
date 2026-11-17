@@ -1,5 +1,8 @@
 [PANEL {{panel_index}} | row {{panel.row}} | {{panel.size}}]
 Shot: {{panel.shot}}. Camera angle: {{panel.angle}}.
+{{#if panel.is_hero}}
+Key moment: give this panel the strongest composition of the strip — dynamic perspective, clear focal subject, more environmental detail than the other panels.
+{{/if}}
 {{#if panel.location}}
 Setting: {{panel.location.name}}.
 {{#if panel.location.desc}}

@@ -114,14 +114,20 @@ export function validateStoryboard(pages: PageStoryboard[], scenes: Scene[], bib
     const special = pages.filter((page) => page.layout !== STRIP_LAYOUT);
     const hero = (page: PageStoryboard) => page.panels[(rules.layouts[page.layout as StripLayoutName]?.hero ?? 1) - 1];
     const matches = (page: PageStoryboard, item: LayoutPlan["items"][number]) => page.layout === item.layout && hero(page)?.beat_ids.includes(item.beat_id);
-    if (special.length !== items.length) add(firstPage, firstPanel, "pacing", `Special strip groups ${special.length} do not match the layout plan's ${items.length} items`, "Use exactly one special group for each layout plan item; other groups must use strip-4");
+    const target = (item: LayoutPlan["items"][number]) => {
+      const matching = special.filter((page) => matches(page, item));
+      return matching.length > 1 ? matching.at(-1) : pages.find((page) => page.panels.some((panel) => panel.beat_ids.includes(item.beat_id))) ?? special.find((page) => page.layout === item.layout);
+    };
+    const unresolved = items.find((item) => special.filter((page) => matches(page, item)).length !== 1);
+    const countPage = special.find((page) => items.filter((item) => matches(page, item)).length !== 1) ?? (unresolved ? target(unresolved) : special.at(-1)) ?? pages[0];
+    if (special.length !== items.length) add(countPage?.page_no ?? firstPage, countPage ? hero(countPage)?.id ?? firstPanel : firstPanel, "pacing", `Special strip groups ${special.length} do not match the layout plan's ${items.length} items`, "Use exactly one special group for each layout plan item; other groups must use strip-4");
     for (const page of special) {
       if (items.filter((item) => matches(page, item)).length !== 1) add(page.page_no, hero(page)?.id ?? page.panels[0]?.id ?? "p1", "pacing", `Special group ${page.page_no} is unplanned or represents multiple layout items`, "Match exactly one planned beat to this group's layout and hero panel");
     }
     for (const item of items) {
       const matching = special.filter((page) => matches(page, item));
       if (matching.length !== 1) {
-        const page = matching[0] ?? special.find((page) => page.layout === item.layout);
+        const page = target(item);
         add(page?.page_no ?? firstPage, page ? hero(page)?.id ?? firstPanel : firstPanel, "pacing", `Planned beat ${item.beat_id} must appear in exactly one ${item.layout} hero panel`, `Use layout=${item.layout} once and include ${item.beat_id} in its hero panel's beat_ids`);
       }
     }
