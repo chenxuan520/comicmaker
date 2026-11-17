@@ -1,12 +1,18 @@
 import type { Bible, Chapter, Context, Page, PageStoryboard } from "./types.js";
 import { chapterId, paragraphs } from "./types.js";
 import { PreconditionError } from "./errors.js";
+import type { LayoutPlan } from "./layoutPlan.js";
 
 export async function getChapter(ctx: Context, number: number | string): Promise<Chapter> {
   const id = chapterId(number);
   const chapter = await ctx.db.get<Chapter>("SELECT * FROM chapters WHERE id = ?", [id]);
   if (!chapter) throw new PreconditionError(`Chapter ${id} not found; import a novel first`);
   return { ...chapter, title: chapter.title.replace(/^#{1,6}\s+/, "") };
+}
+
+export async function getLayoutPlan(ctx: Context, chapter: string): Promise<LayoutPlan | null> {
+  const record = await ctx.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", [`layout.plan.${chapter}`]);
+  return record ? { budget_tier: "daily", top_moments: [], skipped: [], ...JSON.parse(record.value) } : null;
 }
 
 export async function getPage(ctx: Context, id: string): Promise<Page> {

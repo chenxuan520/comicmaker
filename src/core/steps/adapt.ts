@@ -1,7 +1,8 @@
-import { adaptationSchema, storyboardSchema, storyboardReviewSchema, type Scene, type PageStoryboard, type StoryboardIssue } from "../../../schemas/index.js";
-import { getChapter, getBible, entitiesForChapter, chapterData, requireLocked, firstAppearanceCharacters } from "../data.js";
+import { adaptationSchema, adaptationLlmSchema, storyboardSchema, storyboardReviewSchema, type Scene, type PageStoryboard, type StoryboardIssue } from "../../../schemas/index.js";
+import { getChapter, getBible, getLayoutPlan, entitiesForChapter, chapterData, requireLocked, firstAppearanceCharacters } from "../data.js";
 import { ComicError, PreconditionError } from "../errors.js";
 import { structuredCall } from "../llm.js";
+import { planLayouts } from "../layoutPlan.js";
 import type { SqlStatement } from "../ports.js";
 import { validateStoryboard } from "../storyboardCheck.js";
 import type { Context, Page, Ref } from "../types.js";
@@ -86,6 +87,8 @@ function mergeRevision(pages: PageStoryboard[], replacements: PageStoryboard[], 
 
 export async function adaptChapter(ctx: Context, chapterNumber: number | string, options: { force?: boolean } = {}): Promise<unknown> {
   const chapter = await getChapter(ctx, chapterNumber);
+  const budgetMode = ctx.config.storyboard.format === "strip" && ctx.config.storyboard.layout_mode === "budget";
+  const layoutKey = `layout.plan.${chapter.id}`;
   const reviewKey = `storyboard.review.${chapter.id}`;
   const revisionKey = `storyboard.revisions.${chapter.id}`;
   const candidateKey = `storyboard.candidate.${chapter.id}`;
@@ -93,6 +96,12 @@ export async function adaptChapter(ctx: Context, chapterNumber: number | string,
   let state = marker ? JSON.parse(marker.value) as ReviewState : undefined;
   const storedPages = await ctx.db.all<Page>("SELECT * FROM pages WHERE chapter_id = ? ORDER BY page_no", [chapter.id]);
   if (!options.force && ["storyboarded", "rendered", "exported"].includes(chapter.status) && state?.completed && storedPages.length) {
+    if (budgetMode) {
+      const saved = await ctx.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", [layoutKey]);
+      const value = saved?.value ?? JSON.stringify({ budget: 0, items: [] });
+      if (!saved) await ctx.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", [layoutKey, value]);
+      await ctx.fs.writeJson(`chapters/${chapter.id}/layout_plan.json`, JSON.parse(value));
+    }
     return { chapter: chapter.id, pages: storedPages.length, passed: state.passed, issues: state.issues, skipped: true };
   }
 
@@ -115,8 +124,8 @@ export async function adaptChapter(ctx: Context, chapterNumber: number | string,
   const templateData = { chapter: data, prev_summary: previous?.summary ?? "", ...entities, first_appearance_characters: introductions };
   const stored = await ctx.db.get<{ scenes: string; version: number }>("SELECT scenes, version FROM adaptations WHERE chapter_id = ?", [chapter.id]);
   const generateScenes = Boolean(options.force) || !stored || chapter.status === "imported";
-  const adaptation = generateScenes ? await structuredCall(ctx, {
-    step: "adapt", template: "adapt", model: ctx.config.models.adapt, schema: adaptationSchema, data: templateData,
+  const adaptation = generateScenes ? await structuredCall<{ scenes: Scene[]; suggested_pages: number; top_moments?: string[] }>(ctx, {
+    step: "adapt", template: "adapt", model: ctx.config.models.adapt, schema: budgetMode ? adaptationLlmSchema : adaptationSchema, data: templateData,
   }) : undefined;
   const scenes = adaptation?.scenes ?? JSON.parse(stored!.scenes) as Scene[];
   const characterIds = new Set(entities.characters.map((character) => character.id));
@@ -148,10 +157,13 @@ export async function adaptChapter(ctx: Context, chapterNumber: number | string,
     }
   }
   if (invalid.length) throw new ComicError("Scene adaptation is invalid", 1, { issues: invalid });
+  const layoutPlan = budgetMode ? (adaptation ? planLayouts(scenes, adaptation.top_moments ?? [], ctx.config.storyboard) : await getLayoutPlan(ctx, chapter.id) ?? planLayouts([], [], ctx.config.storyboard)) : null;
+  const storedLayout = layoutPlan && scenes.some((scene) => scene.beats.some((beat) => beat.beat_type != null)) ? layoutPlan : { budget: 0, items: [] };
 
   if (adaptation) {
     await ctx.db.transaction([
       { sql: "INSERT INTO adaptations (chapter_id, scenes, version) VALUES (?, ?, 1) ON CONFLICT(chapter_id) DO UPDATE SET scenes = excluded.scenes, version = adaptations.version + 1", params: [chapter.id, JSON.stringify(scenes)] },
+      ...(budgetMode ? [{ sql: "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params: [layoutKey, JSON.stringify(storedLayout)] }] : [{ sql: "DELETE FROM meta WHERE key = ?", params: [layoutKey] }]),
       { sql: "UPDATE chapters SET status = 'adapted' WHERE id = ?", params: [chapter.id] },
       { sql: "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params: [reviewKey, JSON.stringify({ completed: false, passed: false, issues: [] })] },
       { sql: "DELETE FROM meta WHERE key = ?", params: [revisionKey] },
@@ -162,6 +174,10 @@ export async function adaptChapter(ctx: Context, chapterNumber: number | string,
     state = undefined;
   } else if (chapter.status !== "adapted") {
     await ctx.db.run("UPDATE chapters SET status = 'adapted' WHERE id = ?", [chapter.id]);
+  }
+  if (budgetMode) {
+    if (!adaptation) await ctx.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", [layoutKey, JSON.stringify(storedLayout)]);
+    await ctx.fs.writeJson(`chapters/${chapter.id}/layout_plan.json`, storedLayout);
   }
 
   const pendingCandidate = await ctx.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", [candidateKey]);

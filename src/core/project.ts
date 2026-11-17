@@ -54,7 +54,7 @@ export async function importNovel(ctx: Context, bytes: Uint8Array, options: { fo
     { sql: "DELETE FROM pages" },
     { sql: "DELETE FROM chapters" },
     { sql: "INSERT OR REPLACE INTO meta (key, value) VALUES ('cover.source_version', ?)", params: [ulid()] },
-    { sql: "DELETE FROM meta WHERE key LIKE 'prepare.%' OR key LIKE 'storyboard.%' OR key LIKE 'render.%' OR key LIKE 'export.upload.%' OR key = 'schedule.next'" },
+    { sql: "DELETE FROM meta WHERE key LIKE 'prepare.%' OR key LIKE 'storyboard.%' OR key LIKE 'layout.plan.%' OR key LIKE 'render.%' OR key LIKE 'export.upload.%' OR key = 'schedule.next'" },
     ...chapters.map((chapter) => ({
       sql: "INSERT INTO chapters (id, idx, title, text, summary, status) VALUES (?, ?, ?, ?, NULL, 'imported')",
       params: [chapterId(chapter.idx), chapter.idx, chapter.title, chapter.text],
