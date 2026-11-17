@@ -1,4 +1,5 @@
-import { getBible } from "./data.js";
+import { getBible, getLayoutPlan } from "./data.js";
+import { chapterRhythm } from "./rhythm.js";
 import { coverRetryRequired, getCover } from "./steps/cover.js";
 import { chapterId, readingFile, isStripLayout, type Chapter, type Context, type Page, type Ref, type ReadingImages, type UploadedImages } from "./types.js";
 
@@ -42,5 +43,6 @@ export async function getStatus(ctx: Context, chapterNumber?: number | string) {
   const reviewMeta = await ctx.db.all<{ key: string; value: string }>("SELECT * FROM meta WHERE key LIKE 'storyboard.review.%'");
   const warnings = reviewMeta.filter((row) => { const value = JSON.parse(row.value); return value.completed && !value.passed; }).map((row) => `Storyboard review warning for chapter ${row.key.split(".").at(-1)}`);
   const cover = await getCover(ctx);
-  return { project: ctx.project, cover, cover_retry_required: !cover && await coverRetryRequired(ctx), cover_enabled: ctx.config.cover.enabled, comic_format: ctx.config.storyboard.format, chapters: chapters.map(chapter => ({ ...chapter, title: cleanTitle(chapter.title) })), pages, refs, ...await getBible(ctx), warnings, flagged: pages.filter((page) => page.status === "flagged").map((page) => page.id), export_options: { pdf: ctx.config.export.pdf, html: ctx.config.export.html, imgbed: ctx.config.export.imgbed } };
+  const rhythms = new Map(await Promise.all(chapters.filter((chapter) => chapter.page_count > 0).map(async (chapter) => [chapter.id, chapterRhythm(rows.filter((page) => page.chapter_id === chapter.id), await getLayoutPlan(ctx, chapter.id), ctx.config.storyboard)] as const)));
+  return { project: ctx.project, cover, cover_retry_required: !cover && await coverRetryRequired(ctx), cover_enabled: ctx.config.cover.enabled, comic_format: ctx.config.storyboard.format, chapters: chapters.map(chapter => ({ ...chapter, title: cleanTitle(chapter.title), ...(rhythms.has(chapter.id) ? { rhythm: rhythms.get(chapter.id) } : {}) })), pages, refs, ...await getBible(ctx), warnings, flagged: pages.filter((page) => page.status === "flagged").map((page) => page.id), export_options: { pdf: ctx.config.export.pdf, html: ctx.config.export.html, imgbed: ctx.config.export.imgbed } };
 }

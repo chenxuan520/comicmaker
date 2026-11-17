@@ -15,6 +15,7 @@ import { redoPage, renderChapter, restorePageAttempt } from "../core/steps/rende
 import { exportChapter } from "../core/steps/export.js";
 import { dryRunChapter, renderStepPrompt, runChapter } from "../core/pipeline.js";
 import { getStatus } from "../core/status.js";
+import { formatRhythm } from "../core/rhythm.js";
 import { errorInfo, PreconditionError } from "../core/errors.js";
 import type { Context, Ref } from "../core/types.js";
 import { serve } from "../adapters/server.js";
@@ -88,6 +89,12 @@ action(program.command("restore-page <page_id>").requiredOption("--attempt <id>"
 action(program.command("export").requiredOption("--chapter <n>"), true, async (_, flags, workspace, ctx) => exportChapter(ctx!, flags.chapter!, { force: flags.force, font: await exportFont(ctx!, workspace.root) }));
 action(program.command("run").requiredOption("--chapter <n>").option("--dry-run"), true, async (_, flags, workspace, ctx) => flags.dryRun ? dryRunChapter(ctx!, flags.chapter!) : runChapter(ctx!, flags.chapter!, { force: flags.force, font: await exportFont(ctx!, workspace.root) }));
 action(program.command("status").option("--chapter <n>"), true, async (_, flags, __, ctx) => getStatus(ctx!, flags.chapter));
+action(program.command("rhythm").option("--chapter <n>"), true, async (_, flags, __, ctx) => {
+  const status = await getStatus(ctx!, flags.chapter);
+  const chapters = status.chapters.filter((chapter) => chapter.rhythm).map(({ id, idx, title, rhythm }) => ({ id, idx, title, rhythm }));
+  if (flags.json) return { chapters };
+  for (const chapter of chapters) process.stdout.write(formatRhythm(chapter.idx, chapter.rhythm!) + "\n");
+});
 action(program.command("budget"), false, async (_, flags, workspace) => {
   const loaded = await loadConfig(workspace.repository, workspace.root);
   return budgetReport(workspace.ledger, loaded.config.budget, flags.projectId);

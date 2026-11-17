@@ -2,6 +2,7 @@ import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { parse } from "yaml";
 import { adaptationSchema, adaptationLlmSchema, configSchema, sceneSchema, storyboardSchema, type Config, type Scene } from "../schemas/index.js";
@@ -12,7 +13,9 @@ import { adaptChapter, saveStoryboard } from "../src/core/steps/adapt.js";
 import { getLayoutPlan } from "../src/core/data.js";
 import { planLayouts, stripPanelSizes, type LayoutPlan, type StripLayoutName } from "../src/core/layoutPlan.js";
 import { validateStoryboard } from "../src/core/storyboardCheck.js";
-import type { Bible, Ref } from "../src/core/types.js";
+import type { Bible, Page, Ref } from "../src/core/types.js";
+import { getStatus } from "../src/core/status.js";
+import { chapterRhythm, formatRhythm } from "../src/core/rhythm.js";
 import { renderStepPrompt } from "../src/core/pipeline.js";
 import { buildPagePrompt } from "../src/core/promptBuilder.js";
 import { renderChapter, renderPage } from "../src/core/steps/render.js";
@@ -413,6 +416,40 @@ test("missing or changed continuity originals stop before new image fees", async
   await writeFile(join(f.root, "projects/book/chapters/001/attempts/p01-a1.png"), new Uint8Array([1, 2, 3]));
   await assert.rejects(renderPage(f.ctx, "001-p02"), /original is missing or changed/);
   assert.equal(f.ai.imageCalls.length, calls);
+  assert.deepEqual(await f.workspace.ledger.all("SELECT * FROM spend ORDER BY id"), before);
+});
+
+test("chapter rhythm counts actual layouts and reports only close special gaps and special flagged groups", () => {
+  const layouts: StripLayoutName[] = ["strip-4", "strip-4", "strip-3a", "strip-4", "strip-2", "strip-4"];
+  const pages: Page[] = layouts.map((layout, index) => ({ id: `001-p0${index + 1}`, chapter_id: "001", page_no: index + 1, storyboard: JSON.stringify(plannedPage(layout, index + 1)), status: index === 4 ? "flagged" : "planned", final_attempt_id: null }));
+  const plan: LayoutPlan = { budget: 4, budget_tier: "climax", top_moments: [], items: [], skipped: [] };
+  const expected = { sequence: ["4", "4", "3a", "4", "2", "4"], special: 2, groups: 6, budget_used: 3, budget_total: 4, gap_warnings: [5], flagged: [5] };
+  assert.deepEqual(chapterRhythm(pages, plan, budgetRules()), expected);
+  assert.equal(formatRhythm(17, expected), "第17章  4 4 3a 4 2 4  特殊 2/6  预算 3/4  间隔提示 1  flagged 1");
+  assert.equal(chapterRhythm(pages, null, budgetRules()).budget_used, 0);
+  assert.equal(chapterRhythm(pages, null, budgetRules()).budget_total, 0);
+  const fixed = pages.map((page) => ({ ...page, storyboard: JSON.stringify(plannedPage("strip-4", page.page_no)) }));
+  assert.deepEqual(chapterRhythm(fixed, null, defaults.storyboard), { sequence: Array(6).fill("4"), special: 0, groups: 6, budget_used: 0, budget_total: 0, gap_warnings: [], flagged: [] });
+});
+
+test("status and rhythm CLI expose matching read-only chapter reports in JSON and fixed plain format", async (t) => {
+  const f = await preparedFixture(t);
+  const pages = [plannedPage("strip-3a", 1, "b1"), plannedPage("strip-4", 2), plannedPage("strip-2", 3, "b2")];
+  await saveStoryboard(f.ctx, "001", pages);
+  await f.ctx.db.run("UPDATE pages SET status='flagged' WHERE page_no=3");
+  await f.ctx.db.run("INSERT INTO meta(key,value) VALUES ('layout.plan.001',?)", [JSON.stringify({ budget: 4, items: [{ beat_id: "b1", layout: "strip-3a" }, { beat_id: "b2", layout: "strip-2" }] })]);
+  const expected = { sequence: ["3a", "4", "2"], special: 2, groups: 3, budget_used: 3, budget_total: 4, gap_warnings: [3], flagged: [3] };
+  const before = await f.workspace.ledger.all("SELECT * FROM spend ORDER BY id"), images = f.ai.imageCalls.length, text = f.ai.structuredCalls.length;
+  assert.deepEqual((await getStatus(f.ctx)).chapters[0].rhythm, expected);
+  const cli = (args: string[]) => {
+    const result = spawnSync(process.execPath, ["--import", "tsx", "--disable-warning=ExperimentalWarning", "src/cli/index.ts", "rhythm", "-p", "book", ...args], { cwd: f.workspace.repository, env: { ...process.env, COMIC_WORKSPACE: f.root, OPENAI_API_KEY: "rhythm-readonly-test-key" }, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return result.stdout;
+  };
+  assert.deepEqual(JSON.parse(cli(["--chapter", "1", "--json"])).chapters[0].rhythm, expected);
+  assert.equal(cli([]), "第1章  3a 4 2  特殊 2/3  预算 3/4  间隔提示 1  flagged 1\n");
+  assert.equal(f.ai.imageCalls.length, images);
+  assert.equal(f.ai.structuredCalls.length, text);
   assert.deepEqual(await f.workspace.ledger.all("SELECT * FROM spend ORDER BY id"), before);
 });
 
