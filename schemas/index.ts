@@ -498,6 +498,10 @@ export const configSchema = z
   })
   .passthrough()
   .superRefine((config, ctx) => {
+    for (const [name, count, hero] of [["strip-4", 4, null], ["strip-3a", 3, 1], ["strip-3b", 3, 3], ["strip-2", 2, 1], ["strip-1", 1, 1]] as const) {
+      const layout = config.storyboard.layouts[name];
+      if (layout && (layout.rows.length !== count || layout.hero !== hero)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["storyboard", "layouts", name], message: `${name} requires ${count} rows and hero=${hero}` });
+    }
     if (config.storyboard.layouts["strip-4"].cost !== 0 || config.storyboard.layouts["strip-4"].hero !== null) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["storyboard", "layouts", "strip-4"], message: "strip-4 must have zero cost and no hero" });
     }

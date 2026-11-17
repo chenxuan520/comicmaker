@@ -2,7 +2,7 @@ import { adaptationSchema, adaptationLlmSchema, storyboardSchema, storyboardRevi
 import { getChapter, getBible, getLayoutPlan, entitiesForChapter, chapterData, requireLocked, firstAppearanceCharacters } from "../data.js";
 import { ComicError, PreconditionError } from "../errors.js";
 import { structuredCall } from "../llm.js";
-import { planLayouts } from "../layoutPlan.js";
+import { layoutPlanData, planLayouts } from "../layoutPlan.js";
 import type { SqlStatement } from "../ports.js";
 import { validateStoryboard } from "../storyboardCheck.js";
 import type { Context, Page, Ref } from "../types.js";
@@ -65,7 +65,8 @@ export async function patchStoryboard(ctx: Context, chapterNumber: number | stri
   const pages = stored.map((row) => replacements.find((page) => page.page_no === row.page_no) ?? storyboardSchema.parse({ pages: [JSON.parse(row.storyboard)] }).pages[0]);
   const bible = await getBible(ctx);
   const refs = await ctx.db.all<Ref>("SELECT * FROM refs WHERE status = 'locked'");
-  const issues = validateStoryboard(pages, JSON.parse(adaptation.scenes), entitiesForChapter(bible, chapter), refs, ctx.config);
+  const layoutPlan = ctx.config.storyboard.format === "strip" && ctx.config.storyboard.layout_mode === "budget" ? await getLayoutPlan(ctx, chapter.id) : null;
+  const issues = validateStoryboard(pages, JSON.parse(adaptation.scenes), entitiesForChapter(bible, chapter), refs, ctx.config, layoutPlan);
   if (issues.length) throw new PreconditionError("Storyboard patch failed validation", { issues });
   const updated = stored.filter((row, index) => JSON.stringify(storyboardSchema.parse({ pages: [JSON.parse(row.storyboard)] }).pages[0]) !== JSON.stringify(pages[index])).map((row) => row.id);
   if (!updated.length) return { chapter: chapter.id, updated, review_required: false, skipped: true };
@@ -159,6 +160,7 @@ export async function adaptChapter(ctx: Context, chapterNumber: number | string,
   if (invalid.length) throw new ComicError("Scene adaptation is invalid", 1, { issues: invalid });
   const layoutPlan = budgetMode ? (adaptation ? planLayouts(scenes, adaptation.top_moments ?? [], ctx.config.storyboard) : await getLayoutPlan(ctx, chapter.id) ?? planLayouts([], [], ctx.config.storyboard)) : null;
   const storedLayout = layoutPlan && scenes.some((scene) => scene.beats.some((beat) => beat.beat_type != null)) ? layoutPlan : { budget: 0, items: [] };
+  const storyboardData = budgetMode ? { ...templateData, layout_plan: layoutPlanData(layoutPlan, ctx.config.storyboard) } : templateData;
 
   if (adaptation) {
     await ctx.db.transaction([
@@ -185,19 +187,19 @@ export async function adaptChapter(ctx: Context, chapterNumber: number | string,
   const reusePages = !options.force && storedPages.length > 0 && (state !== undefined || chapter.status !== "adapted");
   let pages = candidate ? storyboardSchema.parse({ pages: candidate.pages }).pages : reusePages ? storyboardSchema.parse({ pages: storedPages.map((page) => JSON.parse(page.storyboard)) }).pages : (await structuredCall(ctx, {
     step: "storyboard", template: "storyboard", model: ctx.config.models.storyboard, schema: storyboardSchema,
-    data: { ...templateData, scenes, review_issues: [], storyboard: { pages: [] } },
+    data: { ...storyboardData, scenes, review_issues: [], storyboard: { pages: [] } },
   })).pages;
   let forceFull = Boolean(options.force) || (!reusePages && storedPages.length > 0);
   let revisions = candidate?.revisions ?? Number((await ctx.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", [revisionKey]))?.value ?? 0);
   let pendingIssues = state && !state.completed && state.issues.length ? state.issues : undefined;
   let review: { pass: boolean; issues: StoryboardIssue[] };
   for (;;) {
-    const programIssues = validateStoryboard(pages, scenes, entities, refs, ctx.config);
+    const programIssues = validateStoryboard(pages, scenes, entities, refs, ctx.config, layoutPlan);
     if (programIssues.length) {
       if (revisions >= ctx.config.storyboard.max_revisions) throw new ComicError(`Storyboard failed program validation after ${revisions} revisions`, 1, { issues: programIssues });
       const revised = await structuredCall(ctx, {
         step: "storyboard", template: "storyboard", model: ctx.config.models.storyboard, schema: storyboardSchema,
-        data: { ...templateData, scenes, review_issues: programIssues, storyboard: { pages } },
+        data: { ...storyboardData, scenes, review_issues: programIssues, storyboard: { pages } },
       });
       pages = mergeRevision(pages, revised.pages, programIssues, true);
       pendingIssues = undefined;
@@ -214,7 +216,7 @@ export async function adaptChapter(ctx: Context, chapterNumber: number | string,
     forceFull = false;
     review = pendingIssues ? { pass: false, issues: pendingIssues } : await structuredCall(ctx, {
       step: "storyboard_review", template: "storyboard_review", model: ctx.config.models.storyboard_review, schema: storyboardReviewSchema,
-      data: { ...templateData, scenes, storyboard: { pages } },
+      data: { ...storyboardData, scenes, storyboard: { pages } },
     });
     pendingIssues = undefined;
     if (review.pass) break;
@@ -225,7 +227,7 @@ export async function adaptChapter(ctx: Context, chapterNumber: number | string,
     await ctx.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", [reviewKey, JSON.stringify({ completed: false, passed: false, issues: review.issues })]);
     const revised = await structuredCall(ctx, {
       step: "storyboard", template: "storyboard", model: ctx.config.models.storyboard, schema: storyboardSchema,
-      data: { ...templateData, scenes, review_issues: review.issues, storyboard: { pages } },
+      data: { ...storyboardData, scenes, review_issues: review.issues, storyboard: { pages } },
     });
     pages = mergeRevision(pages, revised.pages, review.issues, false);
     revisions++;

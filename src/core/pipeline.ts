@@ -1,4 +1,5 @@
-import { getBible, getChapter, getPage, chapterData, entitiesForChapter, firstAppearanceCharacters } from "./data.js";
+import { getBible, getChapter, getPage, getLayoutPlan, chapterData, entitiesForChapter, firstAppearanceCharacters } from "./data.js";
+import { layoutPlanData } from "./layoutPlan.js";
 import { PreconditionError } from "./errors.js";
 import { buildPagePrompt } from "./promptBuilder.js";
 import { visualRefs } from "./review.js";
@@ -37,6 +38,7 @@ export async function renderStepPrompt(ctx: Context, step: string, options: { ch
     prev_summary: previous, ...entities, scenes: adaptation ? JSON.parse(adaptation.scenes) : [],
     first_appearance_characters: chapter ? await firstAppearanceCharacters(ctx, chapter, entities) : [],
     review_issues: [], storyboard: { pages: pages.map((item) => JSON.parse(item.storyboard)) },
+    ...(ctx.config.storyboard.format === "strip" && ctx.config.storyboard.layout_mode === "budget" ? { layout_plan: layoutPlanData(chapter ? await getLayoutPlan(ctx, chapter.id) : null, ctx.config.storyboard) } : {}),
     page, panel_count: page?.panels.length ?? 0, layout: page?.layout ?? "", refs: page && step === "review_visual" ? await visualRefs(ctx, page) : [],
     character, outfit, location, corrections: "", text_errors: [], extractions: [],
   };

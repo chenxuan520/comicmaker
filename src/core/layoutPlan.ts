@@ -1,4 +1,4 @@
-import type { Config, Scene } from "../../schemas/index.js";
+import type { Config, Scene, PageStoryboard } from "../../schemas/index.js";
 
 export type StripLayoutName = keyof Config["storyboard"]["layouts"];
 export interface LayoutPlanItem { beat_id: string; layout: StripLayoutName }
@@ -8,6 +8,18 @@ export interface LayoutPlan {
   top_moments: string[];
   items: LayoutPlanItem[];
   skipped: { beat_id: string; reason: "budget" | "min_beat_gap" | "dialogue" | "splash_limit" | "unknown_beat" }[];
+}
+
+export const stripPanelSizes: Record<StripLayoutName, PageStoryboard["panels"][number]["size"][]> = {
+  "strip-4": ["wide", "wide", "wide", "wide"],
+  "strip-3a": ["large", "wide", "wide"],
+  "strip-3b": ["wide", "wide", "large"],
+  "strip-2": ["large", "wide"],
+  "strip-1": ["splash"],
+};
+
+export function layoutPlanData(plan: LayoutPlan | null, rules: Config["storyboard"]) {
+  return (plan?.items ?? []).map((item) => ({ ...item, panel_count: rules.layouts[item.layout]!.rows.length, hero: rules.layouts[item.layout]!.hero, sizes: stripPanelSizes[item.layout] }));
 }
 
 export function planLayouts(scenes: Scene[], topMoments: string[], rules: Config["storyboard"]): LayoutPlan {

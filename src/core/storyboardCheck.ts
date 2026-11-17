@@ -1,13 +1,15 @@
 import type { Config, PageStoryboard, Scene, StoryboardIssue } from "../../schemas/index.js";
 import { STRIP_LAYOUT, isStripLayout, type Bible, type Ref } from "./types.js";
+import { stripPanelSizes, type LayoutPlan, type StripLayoutName } from "./layoutPlan.js";
 
 export function countChineseCharacters(text: string): number {
   return text.match(/[\p{Script=Han}\u3001-\u3003\u3008-\u3011\u3014-\u301b\uff01\uff08\uff09\uff0c\uff0e\uff1a\uff1b\uff1f\uff3b\uff3d\uff5b\uff5d\uff61-\uff65\u2014\u2018\u2019\u201c\u201d\u2026\u00b7]/gu)?.length ?? 0;
 }
 
-export function validateStoryboard(pages: PageStoryboard[], scenes: Scene[], bible: Bible, lockedRefs: Ref[], config: Config): StoryboardIssue[] {
+export function validateStoryboard(pages: PageStoryboard[], scenes: Scene[], bible: Bible, lockedRefs: Ref[], config: Config, layoutPlan: LayoutPlan | null = null): StoryboardIssue[] {
   const issues: StoryboardIssue[] = [];
   const rules = config.storyboard;
+  const budgetMode = rules.format === "strip" && rules.layout_mode === "budget";
   const characters = new Set(bible.characters.map((character) => character.id));
   const outfits = new Set(bible.outfits.map((outfit) => outfit.id));
   const locations = new Set(bible.locations.map((location) => location.id));
@@ -52,7 +54,14 @@ export function validateStoryboard(pages: PageStoryboard[], scenes: Scene[], bib
     const pageCharacters = new Set<string>();
     const anchor = page.panels[0]?.id ?? "p1";
     if (rules.format === "strip") {
-      if (page.layout !== STRIP_LAYOUT || page.panels.length !== 4 || page.panels.some((panel, index) => panel.row !== index + 1 || panel.size !== "wide")) {
+      if (budgetMode) {
+        const layout = Object.hasOwn(rules.layouts, page.layout) ? rules.layouts[page.layout as StripLayoutName] : undefined;
+        const sizes = Object.hasOwn(stripPanelSizes, page.layout) ? stripPanelSizes[page.layout as StripLayoutName] : undefined;
+        if (!layout || !sizes) add(page.page_no, anchor, "pacing", `Unknown strip layout ${page.layout}`, "使用 strip-4，或版式计划中指定的版式");
+        else if (page.panels.length !== layout.rows.length || page.panels.some((panel, index) => panel.row !== index + 1 || panel.size !== sizes[index])) {
+          add(page.page_no, anchor, "pacing", `Strip layout ${page.layout} has incorrect panel count, rows or sizes`, `Use ${page.layout}: ${layout.rows.length} panels, sizes ${sizes.join(", ")}, with consecutive rows starting at 1`);
+        }
+      } else if (page.layout !== STRIP_LAYOUT || page.panels.length !== 4 || page.panels.some((panel, index) => panel.row !== index + 1 || panel.size !== "wide")) {
         add(page.page_no, anchor, "pacing", "Vertical strip must have four full-width panels in one column", `Use layout=${STRIP_LAYOUT}, exactly four panels with size=wide, and rows 1, 2, 3, 4 in top-to-bottom order`);
       }
     } else if (page.panels.length < rules.min_panels || page.panels.length > rules.max_panels) {
@@ -97,6 +106,33 @@ export function validateStoryboard(pages: PageStoryboard[], scenes: Scene[], bib
     }
     if (pageCharacters.size > rules.max_chars_per_page) {
       add(page.page_no, anchor, "pacing", `Page has ${pageCharacters.size} unique characters; maximum is ${rules.max_chars_per_page}`, "Distribute the characters across pages without omitting important beats");
+    }
+  }
+
+  if (budgetMode) {
+    const items = layoutPlan?.items ?? [];
+    const special = pages.filter((page) => page.layout !== STRIP_LAYOUT);
+    const hero = (page: PageStoryboard) => page.panels[(rules.layouts[page.layout as StripLayoutName]?.hero ?? 1) - 1];
+    const matches = (page: PageStoryboard, item: LayoutPlan["items"][number]) => page.layout === item.layout && hero(page)?.beat_ids.includes(item.beat_id);
+    if (special.length !== items.length) add(firstPage, firstPanel, "pacing", `Special strip groups ${special.length} do not match the layout plan's ${items.length} items`, "Use exactly one special group for each layout plan item; other groups must use strip-4");
+    for (const page of special) {
+      if (items.filter((item) => matches(page, item)).length !== 1) add(page.page_no, hero(page)?.id ?? page.panels[0]?.id ?? "p1", "pacing", `Special group ${page.page_no} is unplanned or represents multiple layout items`, "Match exactly one planned beat to this group's layout and hero panel");
+    }
+    for (const item of items) {
+      const matching = special.filter((page) => matches(page, item));
+      if (matching.length !== 1) {
+        const page = matching[0] ?? special.find((page) => page.layout === item.layout);
+        add(page?.page_no ?? firstPage, page ? hero(page)?.id ?? firstPanel : firstPanel, "pacing", `Planned beat ${item.beat_id} must appear in exactly one ${item.layout} hero panel`, `Use layout=${item.layout} once and include ${item.beat_id} in its hero panel's beat_ids`);
+      }
+    }
+    if (rules.layout_rules.max_same_shot_run > 0) {
+      let shot: string | undefined;
+      let run = 0;
+      for (const page of [...pages].sort((a, b) => a.page_no - b.page_no)) for (const panel of page.panels) {
+        run = panel.shot === shot ? run + 1 : 1;
+        shot = panel.shot;
+        if (run > rules.layout_rules.max_same_shot_run) add(page.page_no, panel.id, "pacing", `Shot ${shot} repeats for ${run} consecutive panels`, "换一个景别，例如近景或特写");
+      }
     }
   }
 

@@ -10,10 +10,12 @@ import { prepareBook } from "../src/core/steps/prepare.js";
 import { generateRefs, lockRef } from "../src/core/steps/refs.js";
 import { adaptChapter, saveStoryboard } from "../src/core/steps/adapt.js";
 import { getLayoutPlan } from "../src/core/data.js";
-import { planLayouts } from "../src/core/layoutPlan.js";
+import { planLayouts, stripPanelSizes, type LayoutPlan, type StripLayoutName } from "../src/core/layoutPlan.js";
+import { validateStoryboard } from "../src/core/storyboardCheck.js";
+import type { Bible, Ref } from "../src/core/types.js";
 import { renderStepPrompt } from "../src/core/pipeline.js";
 import { isStripLayout } from "../src/core/types.js";
-import { adaptation, fixture, mockOutput, MockAi, novel, storyboard } from "./helpers.js";
+import { adaptation, extraction, fixture, mockOutput, MockAi, novel, storyboard } from "./helpers.js";
 
 const defaults = configSchema.parse(parse(await readFile(new URL("../config.default.yaml", import.meta.url), "utf8")));
 
@@ -23,6 +25,19 @@ function budgetRules(overrides: Partial<Config["storyboard"]> = {}) {
 
 function beats(count = 40): Scene[] {
   return [{ ...structuredClone(adaptation.scenes[0]), beats: Array.from({ length: count }, (_, index) => ({ ...structuredClone(adaptation.scenes[0].beats[0]), id: `b${index + 1}`, importance: 1, beat_type: "reaction", dialogue: [] })) }];
+}
+
+function plannedPage(layout: StripLayoutName, pageNo: number, beatId?: string) {
+  const page = storyboardSchema.parse({ pages: [{ page_no: pageNo, layout, panels: stripPanelSizes[layout].map((size, index) => ({ ...structuredClone(storyboard.panels[0]), id: `p${index + 1}`, row: index + 1, size, shot: ["远景", "近景", "特写", "中景"][index], dialogue: [], beat_ids: [] })) }] }).pages[0];
+  const hero = defaults.storyboard.layouts[layout]!.hero;
+  if (beatId && hero) page.panels[hero - 1].beat_ids = [beatId];
+  return page;
+}
+
+function checkLayouts(pages: ReturnType<typeof plannedPage>[], scenes: Scene[], plan: LayoutPlan, rules = budgetRules()) {
+  const bible: Bible = { ...extraction, outfits: extraction.characters.flatMap((character) => character.outfits) };
+  const refs = [{ kind: "style", target_id: "project", status: "locked" }, ...bible.outfits.map((item) => ({ kind: "outfit", target_id: item.id, status: "locked" })), ...bible.locations.map((item) => ({ kind: "location", target_id: item.id, status: "locked" }))] as Ref[];
+  return validateStoryboard(pages, scenes, bible, refs, { ...defaults, storyboard: rules }, plan);
 }
 
 async function preparedFixture(t: TestContext, ai = new MockAi()) {
@@ -194,6 +209,82 @@ test("forced manuscript imports invalidate only their layout plans while keeping
   await importNovel(f.ctx, new TextEncoder().encode(novel), { force: true });
   assert.equal(await getLayoutPlan(f.ctx, "001"), null);
   assert.deepEqual(await f.ctx.db.all("SELECT * FROM refs ORDER BY id"), refs);
+});
+
+test("budget storyboards accept exactly planned hero groups, even when special groups are adjacent", () => {
+  const scenes = beats(), plan: LayoutPlan = { budget: 4, budget_tier: "climax", top_moments: ["b1", "b20"], items: [{ beat_id: "b1", layout: "strip-1" }, { beat_id: "b20", layout: "strip-3b" }], skipped: [] };
+  assert.deepEqual(checkLayouts([plannedPage("strip-1", 1, "b1"), plannedPage("strip-3b", 2, "b20")], scenes, plan), []);
+  const extra = checkLayouts([plannedPage("strip-1", 1, "b1"), plannedPage("strip-3b", 2, "b20"), plannedPage("strip-2", 3, "b30")], scenes, plan);
+  assert.ok(extra.some((issue) => issue.detail.includes("unplanned")));
+  const missing = checkLayouts([plannedPage("strip-3b", 1, "b20")], scenes, plan);
+  assert.ok(missing.some((issue) => issue.detail.includes("b1") && issue.detail.includes("strip-1")));
+});
+
+test("hero beat checks report the real hero panel and built-in shapes reject incorrect counts or sizes", () => {
+  const scenes = beats(), plan = planLayouts(scenes, ["b1"], budgetRules());
+  const wrongHero = plannedPage("strip-3b", 1);
+  wrongHero.panels[0].beat_ids = ["b1"];
+  const issues = checkLayouts([wrongHero], scenes, plan);
+  assert.ok(issues.some((issue) => issue.detail.includes("Planned beat b1") && issue.panel === "p3" && issue.type === "pacing"));
+  const shape = fourPanelPage();
+  shape.layout = "strip-3b";
+  const invalid = checkLayouts([shape], scenes, plan);
+  assert.ok(invalid.some((issue) => issue.fix.includes("3 panels, sizes wide, wide, large")));
+  for (const name of ["strip-3c", "constructor"]) {
+    const unknown = { ...wrongHero, layout: name };
+    assert.ok(checkLayouts([unknown], scenes, plan).some((issue) => issue.detail.includes("Unknown strip layout")));
+  }
+});
+
+test("one hero group cannot satisfy two distinct layout-plan items", () => {
+  const scenes = beats(), plan: LayoutPlan = { budget: 2, budget_tier: "daily", top_moments: ["b1", "b20"], items: [{ beat_id: "b1", layout: "strip-3b" }, { beat_id: "b20", layout: "strip-3b" }], skipped: [] };
+  const merged = plannedPage("strip-3b", 1, "b1");
+  merged.panels[2].beat_ids.push("b20");
+  assert.ok(checkLayouts([merged], scenes, plan).some((issue) => issue.detail.includes("multiple layout items")));
+});
+
+test("shot runs are checked in chapter reading order across groups and can be disabled", () => {
+  const scenes = beats(), rules = budgetRules(), plan: LayoutPlan = { budget: 0, budget_tier: "daily", top_moments: [], items: [], skipped: [] };
+  const page = fourPanelPage();
+  const issues = checkLayouts([page], scenes, plan, rules);
+  assert.equal(issues.filter((issue) => issue.detail.includes("consecutive panels")).length, 1);
+  assert.equal(issues.find((issue) => issue.detail.includes("consecutive panels"))!.panel, "p4");
+  assert.deepEqual(checkLayouts([page], scenes, plan, { ...rules, layout_rules: { ...rules.layout_rules, max_same_shot_run: 0 } }), []);
+  const p1 = plannedPage("strip-1", 1, "b1"), p2 = plannedPage("strip-3b", 2, "b20");
+  for (const panel of [...p1.panels, ...p2.panels]) panel.shot = "中景";
+  plan.items = [{ beat_id: "b1", layout: "strip-1" }, { beat_id: "b20", layout: "strip-3b" }];
+  const cross = checkLayouts([p2, p1], scenes, plan, rules);
+  assert.ok(cross.some((issue) => issue.page === 2 && issue.panel === "p3" && issue.detail.includes("consecutive panels")));
+});
+
+test("program-invalid layout groups are revised before rendering and previews carry the same plan", async (t) => {
+  const ai = new MockAi(), page = plannedPage("strip-3b", 1, "b1");
+  page.panels[0].beat_ids = ["b2"];
+  page.panels[1].beat_ids = ["b3"];
+  let storyboards = 0;
+  ai.onStructured = (request) => {
+    if (request.schema_name === "adapt") return { ...adaptation, scenes: adaptation.scenes.map((scene) => ({ ...scene, beats: scene.beats.map((beat) => ({ ...beat, beat_type: "reaction" })) })), top_moments: ["b1"] };
+    if (request.schema_name === "storyboard") return { pages: [storyboards++ === 0 ? fourPanelPage() : page] };
+    return mockOutput(request);
+  };
+  const f = await preparedFixture(t, ai), images = ai.imageCalls.length;
+  f.ctx.config.storyboard = budgetRules();
+  const result = await adaptChapter(f.ctx, 1) as { passed: boolean; revisions: number };
+  assert.equal(result.passed, true);
+  assert.equal(result.revisions, 1);
+  assert.equal(storyboards, 2);
+  assert.equal(ai.imageCalls.length, images);
+  assert.deepEqual(JSON.parse((await f.ctx.fs.readText("chapters/001/storyboard.json"))!), { pages: [page] });
+  const calls = ai.structuredCalls.filter((request) => request.schema_name === "storyboard");
+  for (const call of calls) assert.match(call.system, /b1：layout=strip-3b，3 格，size 依次为 wide、wide、large，重点格是第 3 格/);
+  const preview = await renderStepPrompt(f.ctx, "storyboard", { chapter: 1 }) as { system: string };
+  assert.match(preview.system, /b1：layout=strip-3b/);
+});
+
+test("unsupported built-in shapes are refused in config before any model calls", () => {
+  for (const definition of [{ rows: [50, 25, 25], hero: 1, cost: 2 }, { rows: [65, 35], hero: 2, cost: 2 }]) {
+    assert.equal(configSchema.safeParse({ ...defaults, storyboard: { ...defaults.storyboard, layouts: { ...defaults.storyboard.layouts, "strip-2": definition } } }).success, false);
+  }
 });
 
 test("budget mode on paged comics warns and strip layout detection includes the built-in variants", async (t) => {
