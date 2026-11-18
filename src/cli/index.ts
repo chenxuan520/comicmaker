@@ -7,7 +7,7 @@ import { loadConfig } from "../adapters/config.js";
 import { LocalTemplateStore } from "../adapters/templates.js";
 import { budgetReport } from "../core/budget.js";
 import { createProject, importNovel } from "../core/project.js";
-import { addLocationChapter, addOutfitChapter, addSettings, prepareBook } from "../core/steps/prepare.js";
+import { addLocationChapter, addOutfit, addOutfitChapter, addSettings, prepareBook } from "../core/steps/prepare.js";
 import { generateRefs, lockRef } from "../core/steps/refs.js";
 import { generateCover } from "../core/steps/cover.js";
 import { adaptChapter, patchStoryboard } from "../core/steps/adapt.js";
@@ -68,6 +68,7 @@ action(program.command("prepare"), true, async (_, flags, __, ctx) => prepareBoo
 const settings = program.command("settings");
 action(settings.command("add").requiredOption("--file <path>"), true, async (_, flags, __, ctx) => addSettings(ctx!, JSON.parse(await readFile(resolve(flags.file!), "utf8"))));
 const outfits = program.command("outfits");
+action(outfits.command("add <character_id>").requiredOption("--file <path>").requiredOption("--chapter <n>").requiredOption("--paragraph <n>"), true, async ([id], flags, __, ctx) => addOutfit(ctx!, id, JSON.parse(await readFile(resolve(flags.file!), "utf8")), flags.chapter!, flags.paragraph!));
 action(outfits.command("include <outfit_id>").requiredOption("--chapter <n>").requiredOption("--paragraph <n>"), true, async ([id], flags, __, ctx) => addOutfitChapter(ctx!, id, flags.chapter!, flags.paragraph!));
 const locations = program.command("locations");
 action(locations.command("include <location_id>").requiredOption("--chapter <n>").requiredOption("--paragraph <n>"), true, async ([id], flags, __, ctx) => addLocationChapter(ctx!, id, flags.chapter!, flags.paragraph!));

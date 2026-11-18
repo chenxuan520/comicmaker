@@ -1,4 +1,4 @@
-import type { ChapterSchedule } from '../../schemas/index.js';
+import type { ChapterSchedule, Outfit } from '../../schemas/index.js';
 
 export type { ChapterSchedule, ScheduleInput } from '../../schemas/index.js';
 
@@ -127,7 +127,7 @@ export interface Budget {
 }
 
 export interface ActionInput {
-  action: 'prepare' | 'refs' | 'lock' | 'adapt' | 'render' | 'run' | 'export' | 'redo' | 'cover';
+  action: 'prepare' | 'refs' | 'lock' | 'adapt' | 'render' | 'run' | 'export' | 'redo' | 'cover' | 'outfit-add';
   chapter?: number;
   kind?: RefKind;
   target?: string;
@@ -136,6 +136,9 @@ export interface ActionInput {
   note?: string;
   force?: boolean;
   ignore_limit?: boolean;
+  character_id?: string;
+  outfit?: Outfit;
+  paragraph?: number;
 }
 
 export interface ActionProps {

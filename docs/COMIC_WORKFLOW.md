@@ -76,8 +76,8 @@ pnpm comic lock -p demo-book LOCATION_REF_ID
 
 选图前检查原始尺寸的候选：
 
-- 同一人物的脸、发型、衣色和身体特征一致，与其他角色可区分。
-- 仅按初登状态设计，不提前画后期白发、战伤、境界、礼物或身份文字。
+- 同一人物在同一阶段的脸、发型、衣色和身体特征一致，与其他角色可区分。
+- 按当前目标阶段设计：少年、成年、老年各用独立阶段/服装 ID及适用章；保持同人身份，但面容、发色和体态应随源内时期变化，不一律复制初登照片。后期白发/战伤只在该阶段出现，不向早期倒灌。
 - 未详外貌可作明确的美术选择，但不能变成新剧情事实或未知数字年龄。
 - 地点符合规模和用途，不复制画风样张里的宫殿、角色或奇幻地理。
 - 长期或多时代复用的参考不固定一个未经原文确认的花季、雪季、昼夜或剧情状态。
@@ -89,6 +89,7 @@ pnpm comic lock -p demo-book LOCATION_REF_ID
 
 ```sh
 pnpm comic settings add -p demo-book --file ./missing-settings.json --json
+pnpm comic outfits add -p demo-book CHARACTER_ID --file ./missing-stage.json --chapter 2 --paragraph 1 --json
 pnpm comic outfits include -p demo-book OUTFIT_ID --chapter 2 --paragraph 1 --json
 pnpm comic locations include -p demo-book LOCATION_ID --chapter 2 --paragraph 1 --json
 ```

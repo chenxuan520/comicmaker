@@ -53,7 +53,7 @@ export default function App() {
   const reviewRequired = (selectedId ? project : workspace)?.review_required ?? true;
 
   function canGenerate(action: ActionInput['action']) {
-    if (action === 'lock' || action === 'export') return true;
+    if (action === 'lock' || action === 'export' || action === 'outfit-add') return true;
     if (!workspace || workspaceError || (selectedId && !project)) return false;
     if (action === 'prepare' || action === 'adapt') return apiKeys.text;
     if (action === 'refs' || action === 'cover') return apiKeys.image;

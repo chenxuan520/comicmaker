@@ -1,4 +1,4 @@
-import { extractionSchema, summarySchema, type Extraction } from "../../../schemas/index.js";
+import { extractionSchema, outfitSchema, summarySchema, type Extraction } from "../../../schemas/index.js";
 import { chapterData, getBible, getChapter } from "../data.js";
 import { PreconditionError } from "../errors.js";
 import { structuredCall } from "../llm.js";
@@ -52,6 +52,32 @@ export async function addSettings(ctx: Context, input: unknown) {
   if (additions.characters.length) await ctx.fs.writeJson("bible/characters.json", [...bible.characters, ...additions.characters]);
   if (additions.locations.length) await ctx.fs.writeJson("bible/locations.json", [...bible.locations, ...additions.locations]);
   return { characters: additions.characters.map((item) => item.id), outfits: additions.characters.flatMap((item) => item.outfits.map((outfit) => outfit.id)), locations: additions.locations.map((item) => item.id) };
+}
+
+export async function addOutfit(ctx: Context, characterId: string, input: unknown, chapterNumber: number | string, paragraphNumber: number | string) {
+  if ((await ctx.db.get<{ value: string }>("SELECT value FROM meta WHERE key = 'prepare.extract.completed'"))?.value !== "true") throw new PreconditionError("Prepare the novel before adding a character stage");
+  const outfit = outfitSchema.parse(input);
+  if (!outfit.name.trim()) throw new PreconditionError("Supply a character stage name");
+  const bible = await getBible(ctx);
+  const character = bible.characters.find((item) => item.id === characterId);
+  if (!character) throw new PreconditionError(`Unknown character ${characterId}`);
+  if (!outfit.id.startsWith(`${character.id}.`)) throw new PreconditionError(`Outfit ${outfit.id} must belong to ${character.id}`);
+  if (bible.outfits.some((item) => item.id === outfit.id)) throw new PreconditionError(`Outfit ${outfit.id} already exists; adding a stage never replaces existing settings or references`);
+  const chapter = await getChapter(ctx, chapterNumber);
+  const paragraph = Number(paragraphNumber);
+  if (!Number.isSafeInteger(paragraph) || paragraph < 1 || paragraph > chapterData(chapter).paragraphs.length) throw new PreconditionError("Character stage requires an existing source paragraph");
+  const chapters = new Set((await ctx.db.all<{ idx: number }>("SELECT idx FROM chapters")).map((item) => item.idx));
+  if (outfit.chapters.some((idx) => !chapters.has(idx))) throw new PreconditionError(`Outfit ${outfit.id} refers to an unknown chapter`);
+  if (!outfit.chapters.includes(chapter.idx)) outfit.chapters.push(chapter.idx);
+  const source = `${chapter.idx}:${paragraph}`;
+  character.outfits.push(outfit);
+  if (!character.evidence.includes(source)) character.evidence.push(source);
+  await ctx.db.transaction([
+    { sql: "INSERT INTO outfits (id, character_id, name, spec, chapters) VALUES (?, ?, ?, ?, ?)", params: [outfit.id, character.id, outfit.name, JSON.stringify(outfit), JSON.stringify(outfit.chapters)] },
+    { sql: "UPDATE characters SET spec = ? WHERE id = ?", params: [JSON.stringify(character), character.id] },
+  ]);
+  await ctx.fs.writeJson("bible/characters.json", bible.characters);
+  return { character: character.id, outfit: outfit.id, source };
 }
 
 export async function addOutfitChapter(ctx: Context, outfitId: string, chapterNumber: number | string, paragraphNumber: number | string) {

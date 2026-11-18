@@ -166,6 +166,41 @@ test("CLI reference candidates exclude independently generated book covers", asy
   assert.deepEqual(candidates.refs, []);
 });
 
+test("CLI and Web append independent character stages without replacing old locked refs or charging", { timeout: 60_000 }, async (t) => {
+  const f = await localFixture(t);
+  await writeFile(join(f.root, "input.txt"), novel);
+  await cli(f.root, ["new", "book", "--title", "Book", "--json"]);
+  await cli(f.root, ["import", "-p", "book", "--novel", join(f.root, "input.txt"), "--json"]);
+  await cli(f.root, ["prepare", "-p", "book", "--json"]);
+  const style = (await cli<{ refs: Ref[] }>(f.root, ["refs", "gen", "-p", "book", "--kind", "style", "--json"])).refs[0];
+  await cli(f.root, ["lock", "-p", "book", style.id, "--json"]);
+  const original = (await cli<{ refs: Ref[] }>(f.root, ["refs", "gen", "-p", "book", "--kind", "outfit", "--target", "lin_qing.daily", "--json"])).refs[0];
+  await cli(f.root, ["lock", "-p", "book", original.id, "--json"]);
+  const originalBytes = await readFile(join(f.root, "projects", "book", original.path!));
+  const before = await cli<Status>(f.root, ["status", "-p", "book", "--json"]);
+  const spend = await cli<BudgetReport>(f.root, ["budget", "-p", "book", "--json"]);
+  const requests = f.mock.requests.length;
+  const outfit = { ...extraction.characters[0].outfits[0], id: "lin_qing.young_work", name: "青年阶段", desc: "年轻，清瘦，深色束发。", chapters: [] };
+  await writeFile(join(f.root, "stage.json"), JSON.stringify(outfit));
+  const added = await cli<{ character: string; outfit: string; source: string }>(f.root, ["outfits", "add", "lin_qing", "-p", "book", "--file", join(f.root, "stage.json"), "--chapter", "1", "--paragraph", "1", "--json"]);
+  assert.deepEqual(added, { character: "lin_qing", outfit: outfit.id, source: "1:1" });
+  const server = await startServer(f.workspace, { host: "127.0.0.1", port: 0 });
+  f.cleanup.push(server.close);
+  const elder = { ...outfit, id: "lin_qing.elder", name: "老年阶段", desc: "年老白发，面有皱纹，略佝偻。" };
+  const job = await runJob<{ outfit: string }>(server.url, "book", { action: "outfit-add", character_id: "lin_qing", outfit: elder, chapter: 1, paragraph: 1 });
+  assert.equal(job.result.outfit, elder.id);
+  const current = await api<ApiStatus>(server.url, "/api/projects/book");
+  assert.deepEqual(current.chapters, before.chapters);
+  assert.deepEqual(current.refs.map(({ image_url: _, ...ref }) => ref), before.refs);
+  assert.equal(current.outfits.length, before.outfits.length + 2);
+  assert.deepEqual(await readFile(join(f.root, "projects", "book", original.path!)), originalBytes);
+  assert.equal(f.mock.requests.length, requests);
+  assert.deepEqual(await cli<BudgetReport>(f.root, ["budget", "-p", "book", "--json"]), spend);
+  const rejected = await api<{ job: Job }>(server.url, "/api/projects/book/actions", json("POST", { action: "outfit-add", character_id: "lin_qing", outfit: elder, chapter: 1, paragraph: 1 }), 202);
+  assert.match((await waitJob(server.url, rejected.job.id, "failed")).error!.message, /already exists/);
+  assert.equal(f.mock.requests.length, requests);
+});
+
 test("official OpenAI SDK uses local structured-output and PNG generation/edit HTTP contracts", async (t) => {
   const mock = await startMockOpenai();
   t.after(mock.close);

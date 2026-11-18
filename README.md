@@ -220,6 +220,26 @@ pnpm --silent comic rhythm -p demo-book --chapter 17 --json
 
 连续场景可另设 `image.scene_continuity: true`（默认 false），同时开启 `include_location_ref`，并给 `max_refs` 留足画风、当前人物、所有地点及上一组原图的名额。启用后同章顺序生成，后一组仅在场景、时间与服装连续时引用前组已选且审查通过的不可变原图；切场景、时间或前组 flagged 时不沿用。缺图、哈希改变或名额不足在收费前报错，不缩小 API 参考。分镜仍须写清确有依据的移动，不能用换景别随意交换人物左右位置。
 
+### 同一人物的不同时期参考
+
+人物身份保持同一个 `character_id`，少年、成年、老年等时期使用独立的阶段/服装 ID。每个阶段在 `desc` 中记录该期年龄感、脸部、发色、体态及衣着，在 `chapters` 中限定适用章；即使衣服没换，也不要把不同时期合成同龄脸。未知数字年龄不编。分镜的 `characters[].outfit` 指定当前阶段，生图按该 ID 使用对应锁图，不自动沿用初登场照片。
+
+提取漏了既有角色的某个阶段时，可免费追加。例如 `elder.json`：
+
+```json
+{"id":"lin_qing.elder","name":"老年阶段","desc":"原文此期须发花白、脸有皱纹；衣着未详。","main_color":null,"accent_color":null,"chapters":[12]}
+```
+
+```sh
+pnpm comic outfits add -p demo-book lin_qing --file elder.json --chapter 12 --paragraph 1 --json
+pnpm comic refs gen -p demo-book --kind outfit --target lin_qing.elder --json
+pnpm comic lock -p demo-book NEW_STAGE_REF_ID --json
+```
+
+章号、段号、ID与外貌均须换成实际原文依据。追加只校验归属和出处存在，不替操作者判断语义；不收费、不替换已有阶段或锁图，也不重做历史分镜。新参考生成仍计费。Web「设定图册 → 人物阶段 / 服装 → 为已有角色新增阶段」使用相同核心操作，保存后再生成和选图。一个阶段可有多份候选，但只能锁一份；不同阶段各锁独立参考。后续适用章可用已有 `outfits include` 补关联。
+
+默认提示词按当前目标阶段生成，而非一律初登场。工作区/项目自定义提示词优先级更高；若旧覆盖层仍要求所有阶段都初登外貌，应检查对应覆盖模板，不能通过重画已锁参考来绕过。
+
 ### 制作与重做
 
 提取遗漏整个人物或地点时，可用 `pnpm comic settings add -p demo-book --file missing-settings.json --json` 零费用补录。文件使用提取结果的结构 `{ "characters": [...], "locations": [...] }`，只放缺项；人物字段与 `bible/characters.json` 相同，地点字段与 `bible/locations.json` 相同。命令校验角色证据段号、适用章、服装归属及 ID，整批通过后追加，不调用模型，不覆盖已有设定、参考图或章节状态；`--force` 也不允许覆盖。原文是否支持这些设定由操作者先核实，新增参考图仍需单独生成并锁定。
@@ -301,6 +321,7 @@ pnpm comic export -p demo-book --chapter 1 --force --json
 | `refs gen` | `--kind style\|outfit\|location`，可选 `--target <id>`、`--force` | 生成候选 |
 | `cover gen` | 可选 `--force` 明确重绘或重试 | 补一张全书封面，默认复用已有图 |
 | `refs list` / `lock <ref_id>` | list 可选 `--status candidate\|locked\|rejected` | 列素材 / 锁定选定的图 |
+| `outfits add <character_id>` | `--file <JSON路径>`、`--chapter <n>`、`--paragraph <原文段号>` 必填 | 零费用给已有角色追加独立人生阶段/服装，保留旧锁图 |
 | `outfits include <outfit_id>` | `--chapter <n>`、`--paragraph <原文段号>` 必填 | 给既有服装追加本章关联与原文证据，不调用模型或改参考图 |
 | `locations include <location_id>` | `--chapter <n>`、`--paragraph <原文段号>` 必填 | 为原文明示的既有地点补本章关联，不调用模型或改参考图 |
 | `adapt` / `render` | `--chapter <n>` 必填，可选 `--force` | 改编、分镜与自审 / 生图、审查与重抽 |

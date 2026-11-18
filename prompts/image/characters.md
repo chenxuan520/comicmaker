@@ -1,13 +1,13 @@
 {{#if characters}}
 [CHARACTERS]
-Use the locked character reference sheets for the current appearance. Bible descriptions may mention later chapters: do not add later aging, burns, new scars, ceremonial clothing or weapons to this page unless the current panel explicitly describes that change. An art-style sample supplies rendering style, never the identities or costumes of its unrelated sample characters.
+Use the locked reference for each CURRENT outfit/stage. Keep recognizable identity, but the current outfit/stage, its reference and current source determine age appearance, hair changes and body proportions; global initial descriptions do not force every life period into the same-age face. Do not carry another period's aging, injuries or equipment into this page. An art-style sample supplies rendering style, never the identities or costumes of its unrelated sample characters.
 {{#each characters}}
 {{name}} ({{id}}):
 {{#if gender}}
 Gender: {{gender}}.
 {{/if}}
 {{#if age_look}}
-Apparent age: {{age_look}}.
+Initial age baseline; current outfit/stage takes precedence: {{age_look}}.
 {{/if}}
 {{#if height_build}}
 Height and build: {{height_build}}.

@@ -3,13 +3,13 @@
 Character reference sheet, {{config.refs.sheet_layout}} grid, plain white background, no text, no labels.
 Use reference image 1 ONLY for line art, shading technique and palette. It depicts unrelated characters: DO NOT copy their face, hair ornaments, costume, pose or background.
 Create a distinct identity for the named target. Do not add ceremonial robes, gold embroidery, jewelry, armor or weapons unless the supplied target outfit explicitly requires them. The entire background of every cell must be solid white #FFFFFF, not dark gradients or scenery.
-This sheet depicts the character's initial appearance. Do not apply later-chapter aging, post-battle burns, new scars or equipment to the initial appearance. If a description mentions multiple time periods, use only the first appearance for this sheet.
+This sheet depicts the CURRENT TARGET outfit/life stage specified by outfit.name, outfit.desc and its chapter range, not necessarily the character's first appearance. Preserve recognizable facial identity across stages, but a younger or older target must have the corresponding face, hair and body proportions, not merely the same-age face in different clothes. The current target's age, hair changes and source-grounded marks take precedence over global initial descriptions. Do not carry later injuries or equipment backward, and do not force an early youthful appearance into a requested older stage.
 Character: {{character.name}} ({{character.id}}).
 {{#if character.gender}}
 Gender: {{character.gender}}.
 {{/if}}
 {{#if character.age_look}}
-Apparent age: {{character.age_look}}.
+Initial age baseline; CURRENT TARGET stage takes precedence: {{character.age_look}}.
 {{/if}}
 {{#if character.height_build}}
 Height and build: {{character.height_build}}.
@@ -34,7 +34,7 @@ Distinguishing features: {{character.marks}}.
 {{/if}}
 Outfit: {{outfit.name}} ({{outfit.id}}).
 {{#if outfit.desc}}
-Clothing: {{outfit.desc}}.
+CURRENT TARGET appearance and clothing: {{outfit.desc}}.
 {{/if}}
 {{#if outfit.main_color}}
 Main clothing color: {{outfit.main_color}}.

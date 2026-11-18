@@ -15,7 +15,7 @@ const panelIdSchema = z.string().regex(/^p[1-9]\d*$/);
 const nullableDescription = z.string().nullable();
 const nullableColor = z.string().regex(/[\u3400-\u9fff].*#[0-9a-fA-F]{6}/).nullable();
 
-const outfitSchema = z
+export const outfitSchema = z
   .object({
     id: outfitIdSchema,
     name: z.string(),

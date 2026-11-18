@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import { ulid } from "ulid";
 import { z } from "zod";
-import { configSchema, scheduleInputSchema, type ChapterSchedule, type Config } from "../../schemas/index.js";
+import { configSchema, outfitSchema, scheduleInputSchema, type ChapterSchedule, type Config } from "../../schemas/index.js";
 import { budgetReport } from "../core/budget.js";
 import { ComicError, errorInfo, PreconditionError } from "../core/errors.js";
 import { createProject, importNovel } from "../core/project.js";
@@ -11,7 +11,7 @@ import { runChapter } from "../core/pipeline.js";
 import { getStatus } from "../core/status.js";
 import { adaptChapter } from "../core/steps/adapt.js";
 import { exportChapter } from "../core/steps/export.js";
-import { prepareBook } from "../core/steps/prepare.js";
+import { addOutfit, prepareBook } from "../core/steps/prepare.js";
 import { generateRefs, lockRef } from "../core/steps/refs.js";
 import { generateCover } from "../core/steps/cover.js";
 import { redoPage, renderChapter } from "../core/steps/render.js";
@@ -22,10 +22,11 @@ import { LocalTemplateStore } from "./templates.js";
 import { ChapterScheduler, readChapterSchedule } from "./scheduler.js";
 
 const actionSchema = z.object({
-  action: z.enum(["prepare", "refs", "lock", "adapt", "render", "run", "export", "redo", "cover"]),
+  action: z.enum(["prepare", "refs", "lock", "adapt", "render", "run", "export", "redo", "cover", "outfit-add"]),
   chapter: z.number().int().positive().optional(), kind: z.enum(["style", "outfit", "location"]).optional(),
   target: z.string().optional(), ref_id: z.string().optional(), page_id: z.string().optional(),
   note: z.string().optional(), force: z.boolean().optional(), ignore_limit: z.boolean().optional(),
+  character_id: z.string().optional(), outfit: outfitSchema.optional(), paragraph: z.number().int().positive().optional(),
 }).strict();
 type Action = z.infer<typeof actionSchema>;
 export interface Job {
@@ -104,6 +105,7 @@ export async function startServer(workspace: WorkspaceRuntime, options: { host: 
         }
         switch (action.action) {
           case "prepare": active.result = await prepareBook(ctx, { force: action.force }); break;
+          case "outfit-add": active.result = await addOutfit(ctx, requireField(action.character_id, "character_id"), requireField(action.outfit, "outfit"), requireField(action.chapter, "chapter"), requireField(action.paragraph, "paragraph")); break;
           case "refs": active.result = await generateRefs(ctx, { kind: requireField(action.kind, "kind"), target: action.target, force: action.force }); break;
           case "cover": active.result = await generateCover(ctx, { force: action.force }); break;
           case "lock": active.result = await lockRef(ctx, requireField(action.ref_id, "ref_id")); break;
