@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import { PDFDocument } from "pdf-lib";
 import { createProject, importNovel } from "../src/core/project.js";
 import { BudgetError } from "../src/core/errors.js";
+import { ResponseDecodeError } from "../src/core/ai.js";
 import { prepareBook } from "../src/core/steps/prepare.js";
 import { generateRefs, lockRef } from "../src/core/steps/refs.js";
 import { renderChapter, renderPage, redoPage, restorePageAttempt } from "../src/core/steps/render.js";
 import { exportChapter } from "../src/core/steps/export.js";
-import { compareText, evaluateReview, normalizeText } from "../src/core/review.js";
+import { compareText, evaluateReview, normalizeText, reviewAttempt } from "../src/core/review.js";
 import { exportFont } from "../src/adapters/runtime.js";
 import { MockAi, fixture, mockOutput, novel, png, storyboard, visual } from "./helpers.js";
 import type { Page } from "../src/core/types.js";
@@ -27,6 +28,91 @@ async function prepared(t: TestContext) {
   await ctx.db.run("INSERT INTO pages (id, chapter_id, page_no, storyboard, status) VALUES ('001-p01', '001', 1, ?, 'planned')", [JSON.stringify(storyboard)]);
   return { ...f, ...handle, ai };
 }
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+test("OCR and visual review overlap with separate prompts and unchanged original image inputs", { timeout: 10_000 }, async (t) => {
+  const f = await prepared(t);
+  const ocrStarted = deferred(), visualStarted = deferred(), release = deferred();
+  const images = f.ai.imageCalls.length;
+  const spend = (await f.workspace.ledger.all("SELECT * FROM spend")).length;
+  f.ai.onStructured = async (request) => {
+    assert.deepEqual(request.images![0].data, png);
+    if (request.schema_name === "review_text") {
+      assert.equal(request.images!.length, 1);
+      assert.doesNotMatch(request.user, /弟子来了/);
+      ocrStarted.resolve();
+    } else {
+      assert.equal(request.schema_name, "review_visual");
+      assert.equal(request.images!.length, 2);
+      assert.match(request.user, /弟子来了/);
+      visualStarted.resolve();
+    }
+    await release.promise;
+    return mockOutput(request);
+  };
+  const pending = reviewAttempt(f.ctx, "overlapping-review", storyboard, png);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await ocrStarted.promise;
+    await Promise.race([visualStarted.promise, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("Visual review did not start while OCR was in flight")), 1_000);
+    })]);
+  } finally {
+    clearTimeout(timer);
+    release.resolve();
+    await pending;
+  }
+  assert.equal((await pending).passed, true);
+  assert.equal(f.ai.imageCalls.length, images);
+  assert.equal((await f.workspace.ledger.all("SELECT * FROM spend")).length, spend + 2);
+  assert.ok(await f.ctx.db.get("SELECT value FROM meta WHERE key = 'review.text.overlapping-review'"));
+  assert.ok(await f.ctx.db.get("SELECT value FROM meta WHERE key = 'review.visual.overlapping-review'"));
+});
+
+test("a failed OCR waits for in-flight visual review and resumes from its completed cache", { timeout: 10_000 }, async (t) => {
+  const f = await prepared(t);
+  const visualStarted = deferred(), ocrFailed = deferred(), release = deferred();
+  const images = f.ai.imageCalls.length;
+  const write = f.ctx.fs.writeJson.bind(f.ctx.fs);
+  f.ctx.fs.writeJson = async (path, value) => {
+    await write(path, value);
+    if (path.startsWith("logs/llm-") && typeof value === "object" && value !== null && "error" in value) ocrFailed.resolve();
+  };
+  f.ai.onStructured = async (request) => {
+    if (request.schema_name === "review_text") throw new ResponseDecodeError();
+    assert.equal(request.schema_name, "review_visual");
+    visualStarted.resolve();
+    await release.promise;
+    return mockOutput(request);
+  };
+  let completed = false;
+  const pending = reviewAttempt(f.ctx, "partial-parallel-review", storyboard, png);
+  void pending.then(() => { completed = true; }, () => { completed = true; });
+  try {
+    await Promise.all([visualStarted.promise, ocrFailed.promise]);
+    assert.equal(completed, false);
+    assert.equal((await f.ctx.db.all("SELECT * FROM reviews")).length, 0);
+  } finally {
+    release.resolve();
+    await assert.rejects(pending, ResponseDecodeError);
+  }
+  assert.ok(await f.ctx.db.get("SELECT value FROM meta WHERE key = 'review.visual.partial-parallel-review'"));
+  assert.equal(await f.ctx.db.get("SELECT value FROM meta WHERE key = 'review.text.partial-parallel-review'"), undefined);
+  const failedCall = await f.ctx.db.get<{ id: string }>("SELECT id FROM llm_calls WHERE step = 'review' AND status = 'error'");
+  const failedSpend = await f.workspace.ledger.get<{ estimated: number; cost_usd: number }>("SELECT estimated,cost_usd FROM spend WHERE ref = ?", [failedCall!.id]);
+  assert.equal(failedSpend!.estimated, 1);
+  assert.ok(failedSpend!.cost_usd > 0);
+  f.ai.onStructured = undefined;
+  assert.equal((await reviewAttempt(f.ctx, "partial-parallel-review", storyboard, png)).passed, true);
+  assert.equal(f.ai.structuredCalls.filter((request) => request.schema_name === "review_visual").length, 1);
+  assert.equal(f.ai.structuredCalls.filter((request) => request.schema_name === "review_text").length, 2);
+  assert.equal(f.ai.imageCalls.length, images);
+});
 
 test("restoring a matching reviewed attempt recovers the final copy without API calls or spend", async (t) => {
   const f = await prepared(t);
